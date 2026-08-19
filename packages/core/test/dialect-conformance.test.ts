@@ -1,23 +1,15 @@
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { createTokenSource } from "../src/index.js";
 import type { TokenValue } from "../src/index.js";
+import { tempFile } from "./helpers.js";
 
 function fixture(name: string): string {
   return readFileSync(
     fileURLToPath(new URL(`./fixtures/${name}`, import.meta.url)),
     "utf8",
   );
-}
-
-/** Writes `css` to a fresh temp file and returns its path. */
-function tempFile(css: string): string {
-  const path = join(mkdtempSync(join(tmpdir(), "fittingroom-")), "tokens.css");
-  writeFileSync(path, css);
-  return path;
 }
 
 interface ConformanceCase {
