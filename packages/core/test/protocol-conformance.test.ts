@@ -190,12 +190,15 @@ describe.each(harnesses)("$adapter adapter protocol conformance", (h) => {
   it("refuses fit names that could escape the fit store", async () => {
     const adapter = h.make();
     for (const name of ["", ".", "..", "../evil", "a/b", "a\\b", ".hidden"]) {
-      const response = await adapter.handle({
-        type: "save-fit",
-        name,
-        edits: {},
-      });
-      expect(response.type).toBe("error");
+      const saved = await adapter.handle({ type: "save-fit", name, edits: {} });
+      expect(saved.type).toBe("error");
+      for (const type of ["apply-fit", "delete-fit"] as const) {
+        const response = await adapter.handle({ type, name });
+        expect(response.type).toBe("error");
+        if (response.type === "error") {
+          expect(response.message).toContain("not a valid fit name");
+        }
+      }
     }
     expect(await adapter.handle({ type: "list-fits" })).toEqual({
       type: "fits",

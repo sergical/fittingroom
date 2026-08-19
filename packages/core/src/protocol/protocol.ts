@@ -57,3 +57,52 @@ export type ProtocolResponse =
 export interface ProtocolAdapter {
   handle(request: ProtocolRequest): Promise<ProtocolResponse>;
 }
+
+/**
+ * Narrows an untrusted decoded value (e.g. a parsed HTTP body) to a
+ * ProtocolRequest, or null when it is not one. Transports use this to
+ * reject malformed requests before they reach an adapter, whose
+ * `handle` assumes a well-formed request.
+ */
+export function parseProtocolRequest(value: unknown): ProtocolRequest | null {
+  if (typeof value !== "object" || value === null) return null;
+  const request = value as Record<string, unknown>;
+  switch (request.type) {
+    case "read":
+    case "list-fits":
+      return { type: request.type };
+    case "preview":
+    case "commit":
+      if (!isEdits(request.edits)) return null;
+      return { type: request.type, edits: request.edits };
+    case "save-fit":
+      if (typeof request.name !== "string" || !isEdits(request.edits)) return null;
+      return { type: request.type, name: request.name, edits: request.edits };
+    case "apply-fit":
+    case "delete-fit":
+      if (typeof request.name !== "string") return null;
+      return { type: request.type, name: request.name };
+    default:
+      return null;
+  }
+}
+
+function isEdits(value: unknown): value is Edits {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+  return Object.values(value).every(
+    (edit) =>
+      typeof edit === "string" ||
+      (typeof edit === "object" &&
+        edit !== null &&
+        !Array.isArray(edit) &&
+        halfIsAbsentOrString(edit, "light") &&
+        halfIsAbsentOrString(edit, "dark")),
+  );
+}
+
+function halfIsAbsentOrString(edit: object, half: "light" | "dark"): boolean {
+  const value = (edit as Record<string, unknown>)[half];
+  return value === undefined || typeof value === "string";
+}

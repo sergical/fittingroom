@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { Token, TokenDocument } from "@fittingroom/core";
+import type { Edits, Token, TokenDocument } from "@fittingroom/core";
 import { sendProtocolRequest } from "./protocol-client.js";
 
 /** Unsaved edits live in localStorage so a reload of the lab UI keeps them. */
@@ -8,6 +8,22 @@ const DRAFT_STORAGE_KEY = "fittingroom:draft-edits";
 const COLOR_VALUE =
   /^(#[0-9a-f]{3,8}|(rgb|rgba|hsl|hsla|oklch|oklab|lab|lch|color)\(.*\))$/i;
 const HEX_VALUE = /^#[0-9a-f]{6}$/i;
+
+/**
+ * The browser is the authority on what parses as a color ('red',
+ * 'transparent', ...); the regex covers test environments without
+ * CSS.supports. `var()` references pass CSS.supports for any property,
+ * so they are excluded explicitly.
+ */
+function isColorValue(value: string): boolean {
+  if (COLOR_VALUE.test(value)) return true;
+  return (
+    typeof CSS !== "undefined" &&
+    value !== "" &&
+    !value.includes("var(") &&
+    CSS.supports("color", value)
+  );
+}
 
 type Drafts = Record<string, string>;
 
@@ -34,10 +50,37 @@ export default function App() {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const draftsRef = useRef(drafts);
   draftsRef.current = drafts;
+  const documentRef = useRef(tokenDocument);
+  documentRef.current = tokenDocument;
+
+  const tokenByName = (name: string): Token | undefined =>
+    documentRef.current?.tokens.find((token) => token.name === name);
+
+  /**
+   * A draft edits the light half of a token, so a paired emdash token
+   * must preview as `light-dark(draft, dark)` — a bare value would also
+   * override the dark half, showing a state a commit never produces.
+   */
+  const previewValue = (token: Token | undefined, draft: string): string => {
+    if (
+      documentRef.current?.dialect === "emdash" &&
+      token?.value.raw === undefined &&
+      token?.value.dark !== undefined
+    ) {
+      return `light-dark(${draft}, ${token.value.dark})`;
+    }
+    return draft;
+  };
 
   const pushPreview = () => {
+    const edits = Object.fromEntries(
+      Object.entries(draftsRef.current).map(([name, draft]) => [
+        name,
+        previewValue(tokenByName(name), draft),
+      ]),
+    );
     iframeRef.current?.contentWindow?.postMessage(
-      { type: "fittingroom:preview", edits: draftsRef.current },
+      { type: "fittingroom:preview", edits },
       window.location.origin,
     );
   };
@@ -53,7 +96,7 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(drafts));
     pushPreview();
-  }, [drafts]);
+  }, [drafts, tokenDocument]);
 
   const setDraft = (token: Token, value: string) => {
     setDrafts((previous) => {
@@ -65,10 +108,33 @@ export default function App() {
     });
   };
 
+  /**
+   * A draft is a light-half edit, so a paired token gets an object edit
+   * — a bare string would tell the emdash writer to replace the whole
+   * `light-dark()` value and silently drop the dark half.
+   */
+  const toEdits = (drafts: Drafts): Edits =>
+    Object.fromEntries(
+      Object.entries(drafts).map(([name, draft]) => [
+        name,
+        tokenByName(name)?.value.raw === undefined ? { light: draft } : draft,
+      ]),
+    );
+
   const commit = async () => {
-    const response = await sendProtocolRequest({ type: "commit", edits: drafts });
+    const committed = draftsRef.current;
+    const response = await sendProtocolRequest({
+      type: "commit",
+      edits: toEdits(committed),
+    });
     if (response.type === "committed") {
-      setDrafts({});
+      // Drop only the drafts this commit wrote; an edit typed while the
+      // request was in flight stays a draft instead of vanishing.
+      setDrafts((previous) =>
+        Object.fromEntries(
+          Object.entries(previous).filter(([name, draft]) => committed[name] !== draft),
+        ),
+      );
       setRefusal(null);
       setError(null);
       const read = await sendProtocolRequest({ type: "read" });
@@ -81,7 +147,7 @@ export default function App() {
   };
 
   const colorTokens =
-    tokenDocument?.tokens.filter((token) => COLOR_VALUE.test(baseValue(token))) ?? [];
+    tokenDocument?.tokens.filter((token) => isColorValue(baseValue(token))) ?? [];
   const draftCount = Object.keys(drafts).length;
 
   return (
@@ -114,6 +180,13 @@ export default function App() {
           {loaded && !tokenDocument && (
             <p className="lab-empty">
               No tokens detected. Supported dialects: shadcn, emdash.
+            </p>
+          )}
+          {loaded && tokenDocument && colorTokens.length === 0 && (
+            <p className="lab-empty">
+              {tokenDocument.tokens.length} token
+              {tokenDocument.tokens.length === 1 ? "" : "s"} detected, but none
+              hold a color value the editor can edit.
             </p>
           )}
           {colorTokens.map((token) => {

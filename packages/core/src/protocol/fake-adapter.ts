@@ -82,6 +82,8 @@ export function createFakeAdapter(
           };
 
         case "apply-fit": {
+          const invalid = invalidFitNameMessage(request.name);
+          if (invalid) return { type: "error", message: invalid };
           const fit = fits.get(request.name);
           if (!fit) {
             return { type: "error", message: unknownFitMessage(request.name) };
@@ -89,11 +91,14 @@ export function createFakeAdapter(
           return { type: "fit-applied", fit };
         }
 
-        case "delete-fit":
+        case "delete-fit": {
+          const invalid = invalidFitNameMessage(request.name);
+          if (invalid) return { type: "error", message: invalid };
           if (!fits.delete(request.name)) {
             return { type: "error", message: unknownFitMessage(request.name) };
           }
           return { type: "fit-deleted", name: request.name };
+        }
       }
     },
   };

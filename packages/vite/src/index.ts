@@ -6,8 +6,8 @@ import type { Connect, Plugin } from "vite";
 import {
   createTokenSource,
   createTokenSourceAdapter,
+  parseProtocolRequest,
   type ProtocolAdapter,
-  type ProtocolRequest,
   type ProtocolResponse,
 } from "@fittingroom/core";
 
@@ -24,17 +24,33 @@ export interface FittingroomOptions {
 
 /**
  * Runs inside the host app's pages. Listens for same-origin preview
- * messages from the lab UI and applies them as inline CSS custom
- * property overrides on the document element — never touching files,
- * so losing a preview is always harmless.
+ * messages from the lab UI and applies them through one dedicated
+ * injected stylesheet — never touching files or the host's own inline
+ * styles, so losing or clearing a preview is always harmless.
+ *
+ * The rule's selector is \`:root:not(.dark)\`: a preview edit changes
+ * a token's light value (exactly what a commit writes), so it must not
+ * override class-based dark values — in dark mode the page keeps
+ * showing what the file's \`.dark\` rule declares, matching what a
+ * commit would leave behind.
  */
 const PREVIEW_CLIENT = `(() => {
+  let rule = null;
   const applied = new Set();
+  const previewRule = () => {
+    if (rule) return rule;
+    const sheet = document.createElement("style");
+    sheet.id = "fittingroom-preview";
+    document.head.append(sheet);
+    const index = sheet.sheet.insertRule(":root:not(.dark) {}");
+    rule = sheet.sheet.cssRules[index];
+    return rule;
+  };
   window.addEventListener("message", (event) => {
     if (event.origin !== window.location.origin) return;
     const data = event.data;
-    if (!data || data.type !== "fittingroom:preview" || typeof data.edits !== "object") return;
-    const style = document.documentElement.style;
+    if (!data || data.type !== "fittingroom:preview" || typeof data.edits !== "object" || data.edits === null) return;
+    const style = previewRule().style;
     for (const name of [...applied]) {
       if (!(name in data.edits)) {
         style.removeProperty(name);
@@ -100,7 +116,16 @@ function findTokenCssFile(root: string): string | null {
     }
   }
   candidates.sort();
-  return candidates.find((path) => createTokenSource(path).read() !== null) ?? null;
+  // A candidate counts only when it parses AND yields tokens: dialect
+  // detection is content-sniffing (`.dark {`, `@theme`, ...), so an
+  // ordinary stylesheet can match a dialect while holding no tokens —
+  // it must not mask the real token file.
+  return (
+    candidates.find((path) => {
+      const document = createTokenSource(path).read();
+      return document !== null && document.tokens.length > 0;
+    }) ?? null
+  );
 }
 
 function send(
@@ -155,11 +180,16 @@ async function handleProtocol(
     send(res, 403, "text/plain", "cross-origin protocol requests are refused");
     return;
   }
-  let request: ProtocolRequest;
+  let decoded: unknown;
   try {
-    request = JSON.parse(await readBody(req)) as ProtocolRequest;
+    decoded = JSON.parse(await readBody(req));
   } catch {
     send(res, 400, "text/plain", "protocol requests must be JSON");
+    return;
+  }
+  const request = parseProtocolRequest(decoded);
+  if (!request) {
+    send(res, 400, "text/plain", "the body is not a Protocol request");
     return;
   }
   if (!adapter) {

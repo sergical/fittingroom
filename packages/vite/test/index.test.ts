@@ -136,6 +136,34 @@ describe("fittingroom dev server", () => {
     expect(response.status).toBe(400);
   });
 
+  it("rejects valid JSON that is not a Protocol request with 400", async () => {
+    const bodies = [
+      null,
+      42,
+      {},
+      { type: "commit" }, // missing edits
+      { type: "commit", edits: { "--primary": 7 } }, // non-string edit
+      { type: "delete-fit" }, // missing name
+      { type: "no-such-type" },
+    ];
+    for (const body of bodies) {
+      const response = await protocol(body);
+      expect(response.status).toBe(400);
+    }
+  });
+
+  it("refuses fit names that traverse outside the fit store", async () => {
+    const packageJson = join(root, "package.json");
+    writeFileSync(packageJson, "{}");
+    for (const type of ["apply-fit", "delete-fit"] as const) {
+      const response = await protocol({ type, name: "../package" });
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as ProtocolResponse;
+      expect(body.type).toBe("error");
+    }
+    expect(readFileSync(packageJson, "utf8")).toBe("{}");
+  });
+
   it("injects the preview client into the host app's pages", async () => {
     const html = await (await fetch(`${baseUrl}/`)).text();
     expect(html).toContain("/__fittingroom/preview-client.js");

@@ -24,6 +24,10 @@ jobs:
           registry-url: https://registry.npmjs.org
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
+      # playwright-core never downloads browsers on install; the example
+      # app's E2E test launches Chromium, so fetch it explicitly.
+      - name: Install Chromium for the E2E test
+        run: pnpm --filter @fittingroom/example-vite-app exec playwright-core install --with-deps chromium
       - run: pnpm test
       - name: Create release PR or publish
         uses: changesets/action@v1

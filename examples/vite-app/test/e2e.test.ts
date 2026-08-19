@@ -62,10 +62,18 @@ it("opens, edits, previews, reloads, commits, and changes the file", async () =>
   await primaryValue.fill("#ff0000");
   const previewPrimary = () => {
     const frame = page.frames().find((f) => f !== page.mainFrame());
+    // The preview client applies drafts through its own injected
+    // stylesheet, leaving inline styles and files untouched.
     return frame
-      ? frame.evaluate(() =>
-          document.documentElement.style.getPropertyValue("--primary"),
-        )
+      ? frame.evaluate(() => {
+          const sheet = document.getElementById(
+            "fittingroom-preview",
+          ) as HTMLStyleElement | null;
+          const rule = sheet?.sheet?.cssRules[0];
+          return rule instanceof CSSStyleRule
+            ? rule.style.getPropertyValue("--primary")
+            : "";
+        })
       : "";
   };
   await expect.poll(previewPrimary).toBe("#ff0000");

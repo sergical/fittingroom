@@ -82,6 +82,8 @@ export function createTokenSourceAdapter(
         }
 
         case "apply-fit": {
+          const invalid = invalidFitNameMessage(request.name);
+          if (invalid) return { type: "error", message: invalid };
           if (!existsSync(fitPath(request.name))) {
             return { type: "error", message: unknownFitMessage(request.name) };
           }
@@ -91,12 +93,15 @@ export function createTokenSourceAdapter(
           return { type: "fit-applied", fit };
         }
 
-        case "delete-fit":
+        case "delete-fit": {
+          const invalid = invalidFitNameMessage(request.name);
+          if (invalid) return { type: "error", message: invalid };
           if (!existsSync(fitPath(request.name))) {
             return { type: "error", message: unknownFitMessage(request.name) };
           }
           rmSync(fitPath(request.name));
           return { type: "fit-deleted", name: request.name };
+        }
       }
     },
   };
