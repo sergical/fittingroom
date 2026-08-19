@@ -27,7 +27,11 @@ export interface Token {
   category?: TokenCategory;
 }
 
-export interface TokenSet {
+/**
+ * The complete set of tokens read from a host app, tagged with the
+ * dialect the source was read in.
+ */
+export interface TokenDocument {
   tokens: Token[];
   dialect: "shadcn" | "emdash";
 }

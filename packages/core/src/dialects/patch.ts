@@ -5,10 +5,15 @@ import postcss from "postcss";
  * including nested inside `@layer`) and returns the resulting CSS. Only
  * the matched declarations' values are touched — everything else,
  * including whitespace and formatting, is preserved byte-for-byte.
+ *
+ * Deliberately no zero-edit shortcut: `patchRootDecls(css, {})` runs the
+ * full parse/re-serialize cycle, which is how TokenSource proves a file
+ * round-trips byte-identically before writing to it.
  */
-export function applyEdits(css: string, edits: Record<string, string>): string {
-  if (Object.keys(edits).length === 0) return css;
-
+export function patchRootDecls(
+  css: string,
+  edits: Record<string, string>,
+): string {
   const root = postcss.parse(css);
 
   root.walkRules(":root", (rule) => {

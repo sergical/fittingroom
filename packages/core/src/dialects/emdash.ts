@@ -1,26 +1,38 @@
 import postcss from "postcss";
 import valueParser from "postcss-value-parser";
-import type { Token, TokenSet } from "../model/types.js";
+import type { Token, TokenDocument } from "../model/types.js";
+import type { Dialect } from "./dialect.js";
+import { patchRootDecls } from "./patch.js";
 
 /**
- * Parses an emdash tokens.css excerpt: custom properties in `:root`,
+ * The emdash tokens.css convention: custom properties in `:root`,
  * including `:root` rules nested inside `@layer base` (or any `@layer`).
  * Values written as `light-dark(a, b)` are split into a light/dark pair;
  * any other value is kept as a single raw value.
  */
-export function parseEmdash(css: string): TokenSet {
-  const root = postcss.parse(css);
-  const tokens: Token[] = [];
+export const emdash: Dialect = {
+  name: "emdash",
 
-  root.walkRules(":root", (rule) => {
-    rule.walkDecls((decl) => {
-      if (!decl.prop.startsWith("--")) return;
-      tokens.push({ name: decl.prop, value: parseValue(decl.value) });
+  detect(css) {
+    return css.includes("light-dark(") || /@layer[\s\S]*?:root/.test(css);
+  },
+
+  parse(css): TokenDocument {
+    const root = postcss.parse(css);
+    const tokens: Token[] = [];
+
+    root.walkRules(":root", (rule) => {
+      rule.walkDecls((decl) => {
+        if (!decl.prop.startsWith("--")) return;
+        tokens.push({ name: decl.prop, value: parseValue(decl.value) });
+      });
     });
-  });
 
-  return { tokens, dialect: "emdash" };
-}
+    return { tokens, dialect: "emdash" };
+  },
+
+  patch: patchRootDecls,
+};
 
 function parseValue(value: string): { raw?: string; light?: string; dark?: string } {
   const parsed = valueParser(value);

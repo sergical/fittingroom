@@ -1,0 +1,54 @@
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+import { createTokenSource } from "../src/index.js";
+
+/** Writes `css` to a fresh temp file and returns its path. */
+function tempFile(css: string): string {
+  const path = join(mkdtempSync(join(tmpdir(), "fittingroom-")), "tokens.css");
+  writeFileSync(path, css);
+  return path;
+}
+
+describe("TokenSource on CSS in no known dialect", () => {
+  const css = "body { color: red; }\n";
+
+  it("read() returns null", () => {
+    expect(createTokenSource(tempFile(css)).read()).toBeNull();
+  });
+
+  it("write() is refused naming the supported dialects; the file is untouched", () => {
+    const path = tempFile(css);
+    const result = createTokenSource(path).write({ "--primary": "blue" });
+
+    expect(result.status).toBe("refused");
+    if (result.status === "refused") {
+      expect(result.reason).toContain("shadcn");
+      expect(result.reason).toContain("emdash");
+    }
+    expect(readFileSync(path, "utf8")).toBe(css);
+  });
+});
+
+describe("TokenSource round-trip refusal", () => {
+  // Detected as shadcn (`.dark` rule) but the block is never closed,
+  // so the file cannot be parsed — let alone re-serialized byte-identically.
+  const css = ":root {\n  --primary: red;\n}\n.dark {\n  --primary: blue;\n";
+
+  it("read() returns null for a file that cannot be parsed", () => {
+    expect(createTokenSource(tempFile(css)).read()).toBeNull();
+  });
+
+  it("write() to a file that cannot round-trip is refused with diff + reason; the file is untouched", () => {
+    const path = tempFile(css);
+    const result = createTokenSource(path).write({ "--primary": "green" });
+
+    expect(result.status).toBe("refused");
+    if (result.status === "refused") {
+      expect(result.reason).toContain("cannot be parsed");
+      expect(typeof result.diff).toBe("string");
+    }
+    expect(readFileSync(path, "utf8")).toBe(css);
+  });
+});
