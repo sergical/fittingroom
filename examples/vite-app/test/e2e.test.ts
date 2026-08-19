@@ -1,7 +1,7 @@
 // The end-to-end loops: open the room, edit (a color, then spacing via
 // the density multiplier, then a shadow via presets and sliders),
-// observe the live Preview change, commit, assert the file diff. They prove composition, not behaviors — those
-// are tested at the seams.
+// observe the live Preview change, commit, assert the file diff. They
+// prove composition, not behaviors — those are tested at the seams.
 import { cpSync, mkdtempSync, readFileSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
