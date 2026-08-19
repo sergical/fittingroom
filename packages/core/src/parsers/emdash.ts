@@ -27,7 +27,13 @@ function parseValue(value: string): { raw?: string; light?: string; dark?: strin
   const [first] = parsed.nodes;
 
   if (first?.type === "function" && first.value === "light-dark") {
-    const args = valueParser.stringify(first.nodes).split(",");
+    // Split on the function's top-level comma only — argument values may
+    // themselves contain commas (e.g. light-dark(rgb(0, 0, 0), #fff)).
+    const args: string[] = [""];
+    for (const node of first.nodes) {
+      if (node.type === "div" && node.value === ",") args.push("");
+      else args[args.length - 1] += valueParser.stringify(node);
+    }
     const [light, dark] = args.map((arg) => arg.trim());
     return { light, dark };
   }

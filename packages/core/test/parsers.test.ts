@@ -59,6 +59,16 @@ describe("parseEmdash", () => {
     });
   });
 
+  it("splits light-dark() whose arguments contain commas", () => {
+    const { tokens } = parseEmdash(
+      ":root { --color-ink: light-dark(rgb(0, 0, 0), rgba(255, 255, 255, 0.9)); }",
+    );
+    expect(tokens[0]?.value).toEqual({
+      light: "rgb(0, 0, 0)",
+      dark: "rgba(255, 255, 255, 0.9)",
+    });
+  });
+
   it("keeps non-light-dark() values as a single raw value", () => {
     const { tokens } = parseEmdash(css);
     const byName = new Map(tokens.map((t) => [t.name, t]));
