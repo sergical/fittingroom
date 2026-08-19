@@ -8,6 +8,14 @@ import {
   spacingEdits,
   type SpacingEdit,
 } from "./spacing.js";
+import {
+  composeShadow,
+  isShadowToken,
+  parseShadow,
+  SHADOW_PRESETS,
+  type DecomposedShadow,
+  type ShadowLength,
+} from "./shadow.js";
 
 /** Unsaved edits live in localStorage so a reload of the lab UI keeps them. */
 const DRAFT_STORAGE_KEY = "fittingroom:draft-edits";
@@ -81,6 +89,7 @@ export default function App() {
   const [loaded, setLoaded] = useState(false);
   const [drafts, setDrafts] = useState<Drafts>(loadDrafts);
   const [spacing, setSpacing] = useState<SpacingState>(loadSpacing);
+  const [shadowTab, setShadowTab] = useState<"presets" | "sliders">("presets");
   const [refusal, setRefusal] = useState<{ reason: string; diff: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -232,6 +241,10 @@ export default function App() {
   const colorTokens =
     tokenDocument?.tokens.filter((token) => isColorValue(baseValue(token))) ?? [];
   const spacingTokens = tokenDocument?.tokens.filter(isSpacingToken) ?? [];
+  const shadowTokens = tokenDocument?.tokens.filter(isShadowToken) ?? [];
+  const sectionCount = [colorTokens, spacingTokens, shadowTokens].filter(
+    (tokens) => tokens.length > 0,
+  ).length;
   const derivedSpacing = spacingEdits(
     tokenDocument?.tokens ?? [],
     spacing.density,
@@ -271,14 +284,14 @@ export default function App() {
               No tokens detected. Supported dialects: shadcn, emdash.
             </p>
           )}
-          {loaded && tokenDocument && colorTokens.length === 0 && spacingTokens.length === 0 && (
+          {loaded && tokenDocument && sectionCount === 0 && (
             <p className="lab-empty">
               {tokenDocument.tokens.length} token
               {tokenDocument.tokens.length === 1 ? "" : "s"} detected, but none
-              hold a color or spacing value the editor can edit.
+              hold a color, spacing, or shadow value the editor can edit.
             </p>
           )}
-          {colorTokens.length > 0 && spacingTokens.length > 0 && (
+          {colorTokens.length > 0 && sectionCount > 1 && (
             <h2 className="lab-section-title">Colors</h2>
           )}
           {colorTokens.map((token) => {
@@ -368,11 +381,153 @@ export default function App() {
               })}
             </>
           )}
+          {shadowTokens.length > 0 && (
+            <>
+              <h2 className="lab-section-title">Shadows</h2>
+              <div className="lab-tabs" role="tablist" aria-label="Shadow editor">
+                {(["presets", "sliders"] as const).map((tab) => (
+                  <button
+                    key={tab}
+                    type="button"
+                    role="tab"
+                    aria-selected={shadowTab === tab}
+                    className={`lab-tab${shadowTab === tab ? " lab-tab-active" : ""}`}
+                    onClick={() => setShadowTab(tab)}
+                  >
+                    {tab === "presets" ? "Presets" : "Sliders"}
+                  </button>
+                ))}
+              </div>
+              {shadowTokens.map((token) => {
+                const current = drafts[token.name] ?? baseValue(token);
+                return (
+                  <div className="lab-shadow" key={token.name}>
+                    <div className="lab-token">
+                      <span className="lab-token-name">{token.name}</span>
+                      <button
+                        type="button"
+                        className="lab-reset"
+                        aria-label={`Reset ${token.name}`}
+                        disabled={drafts[token.name] === undefined}
+                        onClick={() => setDraft(token, baseValue(token))}
+                      >
+                        Reset
+                      </button>
+                    </div>
+                    {shadowTab === "presets" ? (
+                      <div className="lab-preset-row" role="group" aria-label={`${token.name} presets`}>
+                        {SHADOW_PRESETS.map((preset) => (
+                          <button
+                            key={preset.name}
+                            type="button"
+                            className="lab-preset"
+                            aria-pressed={current === preset.value}
+                            onClick={() => setDraft(token, preset.value)}
+                          >
+                            {preset.name}
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <ShadowSliders
+                        token={token}
+                        value={current}
+                        onChange={(value) => setDraft(token, value)}
+                      />
+                    )}
+                  </div>
+                );
+              })}
+            </>
+          )}
         </section>
 
         <section className="lab-preview" aria-label="Preview">
           <iframe ref={iframeRef} title="Preview" src="/" onLoad={pushPreview} />
         </section>
+      </div>
+    </div>
+  );
+}
+
+const SHADOW_SLIDERS: ReadonlyArray<{
+  part: "offsetX" | "offsetY" | "blur" | "spread";
+  label: string;
+  min: number;
+  max: number;
+}> = [
+  { part: "offsetX", label: "offset-x", min: -40, max: 40 },
+  { part: "offsetY", label: "offset-y", min: -40, max: 40 },
+  { part: "blur", label: "blur", min: 0, max: 80 },
+  { part: "spread", label: "spread", min: -40, max: 40 },
+];
+
+/** Slider steps follow the unit: whole px, fine steps for rem/em. */
+const sliderStep = (unit: string) => (unit === "" || unit === "px" ? 1 : 0.05);
+
+/**
+ * The decomposed half of the shadow editor. Every slider move composes
+ * the parts back into one string before it becomes a draft — the token
+ * never stores anything but the composed value. A value the sliders
+ * cannot decompose (multi-layer, var()) degrades to a text input.
+ */
+function ShadowSliders({
+  token,
+  value,
+  onChange,
+}: {
+  token: Token;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const shadow = parseShadow(value);
+  if (!shadow) {
+    return (
+      <div className="lab-token">
+        <input
+          type="text"
+          aria-label={`${token.name} value`}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+        />
+      </div>
+    );
+  }
+  const setPart = (part: Partial<DecomposedShadow>) =>
+    onChange(composeShadow({ ...shadow, ...part }));
+  return (
+    <div className="lab-shadow-sliders">
+      {SHADOW_SLIDERS.map(({ part, label, min, max }) => {
+        const length: ShadowLength = shadow[part];
+        return (
+          <div className="lab-token" key={part}>
+            <span className="lab-token-name">{label}</span>
+            <input
+              type="range"
+              min={min}
+              max={max}
+              step={sliderStep(length.unit)}
+              aria-label={`${token.name} ${label}`}
+              value={length.value}
+              onChange={(event) =>
+                setPart({ [part]: { ...length, value: Number(event.target.value) } })
+              }
+            />
+            <span className="lab-token-computed">
+              {length.value}
+              {length.unit || "px"}
+            </span>
+          </div>
+        );
+      })}
+      <div className="lab-token">
+        <span className="lab-token-name">color</span>
+        <input
+          type="text"
+          aria-label={`${token.name} color`}
+          value={shadow.color}
+          onChange={(event) => setPart({ color: event.target.value })}
+        />
       </div>
     </div>
   );

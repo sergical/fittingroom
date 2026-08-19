@@ -10,6 +10,7 @@
   --spacing-sm: 0.75rem;
   --spacing-md: 1.25rem;
   --spacing-lg: 2rem;
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1);
 }
 
 .dark {
@@ -59,4 +60,5 @@ body {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--muted);
+  box-shadow: var(--shadow-md);
 }

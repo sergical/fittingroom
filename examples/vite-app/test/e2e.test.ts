@@ -1,6 +1,6 @@
 // The end-to-end loops: open the room, edit (a color, then spacing via
-// the density multiplier), observe the live Preview change, commit,
-// assert the file diff. They prove composition, not behaviors — those
+// the density multiplier, then a shadow via presets and sliders),
+// observe the live Preview change, commit, assert the file diff. They prove composition, not behaviors — those
 // are tested at the seams.
 import { cpSync, mkdtempSync, readFileSync } from "node:fs";
 import type { AddressInfo } from "node:net";
@@ -121,7 +121,7 @@ it("scales spacing by density, composes overrides, commits, and resets", async (
   await expect.poll(() => previewVar("--spacing-sm")).toBe("2rem");
 
   // Reset: original values come back.
-  await page.locator("button.lab-reset").click();
+  await page.locator('button[aria-label="Reset spacing"]').click();
   await expect.poll(() => density.inputValue()).toBe("1");
   await expect.poll(() => previewVar("--spacing-md")).toBe("");
   await expect
@@ -148,4 +148,40 @@ it("scales spacing by density, composes overrides, commits, and resets", async (
   await expect
     .poll(() => page.locator('input[aria-label="--spacing-md value"]').inputValue())
     .toBe("2.5rem");
+});
+
+// The shadow loop from issue #7: presets pick fast, decomposed sliders
+// tune precisely, and the value that previews and commits is always one
+// composed string.
+it("picks a shadow preset, tunes it with the sliders, and commits one string", async () => {
+  const cssPath = join(root, "src", "styles.css");
+  const originalCss = readFileSync(cssPath, "utf8");
+
+  // Presets tab: picking a preset previews its composed string.
+  await page
+    .locator('[aria-label="--shadow-md presets"] button', { hasText: "lg" })
+    .click();
+  await expect
+    .poll(() => previewVar("--shadow-md"))
+    .toBe("0 10px 15px -3px rgb(0 0 0 / 0.1)");
+  expect(readFileSync(cssPath, "utf8")).toBe(originalCss);
+
+  // Sliders tab: one decomposed part moves; the rest of the preset stays.
+  await page.getByRole("tab", { name: "Sliders" }).click();
+  await page.locator('input[aria-label="--shadow-md blur"]').fill("20");
+  await expect
+    .poll(() => previewVar("--shadow-md"))
+    .toBe("0 10px 20px -3px rgb(0 0 0 / 0.1)");
+
+  // Commit: the stored token value is the one composed string.
+  await page.locator("button.lab-commit").click();
+  await expect
+    .poll(() => readFileSync(cssPath, "utf8"))
+    .toBe(
+      originalCss.replace(
+        "--shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1);",
+        "--shadow-md: 0 10px 20px -3px rgb(0 0 0 / 0.1);",
+      ),
+    );
+  await expect.poll(() => previewVar("--shadow-md")).toBe("");
 });

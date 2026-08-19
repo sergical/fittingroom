@@ -130,6 +130,61 @@ body {
   white-space: nowrap;
 }
 
+.lab-tabs {
+  display: flex;
+  gap: 0.25rem;
+  padding: 0.25rem 0;
+}
+
+.lab-tab {
+  padding: 0.25rem 0.625rem;
+  border: 1px solid #d6d3d1;
+  border-radius: 0.375rem;
+  background: #fff;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.lab-tab-active {
+  border-color: #1c1917;
+  background: #1c1917;
+  color: #fff;
+}
+
+.lab-shadow {
+  padding: 0.125rem 0 0.375rem;
+}
+
+.lab-preset-row {
+  display: flex;
+  gap: 0.25rem;
+  padding: 0.125rem 0;
+}
+
+.lab-preset {
+  padding: 0.25rem 0.5rem;
+  border: 1px solid #d6d3d1;
+  border-radius: 0.375rem;
+  background: #fff;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.lab-preset[aria-pressed="true"] {
+  border-color: #1c1917;
+  background: #1c1917;
+  color: #fff;
+}
+
+.lab-shadow-sliders .lab-token {
+  padding: 0.125rem 0;
+}
+
+.lab-shadow-sliders input[type="range"] {
+  flex: 2;
+  min-width: 0;
+}
+
 .lab-token {
   display: flex;
   align-items: center;
