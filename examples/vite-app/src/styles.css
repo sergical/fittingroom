@@ -1,0 +1,59 @@
+:root {
+  --background: #ffffff;
+  --foreground: #1c1917;
+  --primary: #4f46e5;
+  --primary-foreground: #ffffff;
+  --muted: #f5f5f4;
+  --muted-foreground: #78716c;
+  --border: #e7e5e4;
+  --radius: 0.5rem;
+}
+
+.dark {
+  --background: #1c1917;
+  --foreground: #fafaf9;
+  --primary: #818cf8;
+  --primary-foreground: #1e1b4b;
+  --muted: #292524;
+  --muted-foreground: #a8a29e;
+  --border: #44403c;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, sans-serif;
+  background: var(--background);
+  color: var(--foreground);
+}
+
+.hero {
+  max-width: 36rem;
+  margin: 4rem auto;
+  padding: 0 1.5rem;
+}
+
+.hero h1 {
+  color: var(--primary);
+}
+
+.hero p {
+  color: var(--muted-foreground);
+}
+
+.hero button {
+  padding: 0.625rem 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--primary);
+  color: var(--primary-foreground);
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+.hero .card {
+  margin-top: 2rem;
+  padding: 1rem 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--muted);
+}

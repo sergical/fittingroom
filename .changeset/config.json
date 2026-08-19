@@ -7,5 +7,5 @@
   "access": "public",
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
-  "ignore": ["@fittingroom/ui"]
+  "ignore": ["@fittingroom/ui", "@fittingroom/example-vite-app"]
 }

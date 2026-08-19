@@ -4,7 +4,18 @@ body {
 }
 
 .lab-shell {
-  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  padding: 1rem 1.5rem;
+  box-sizing: border-box;
+  gap: 1rem;
+}
+
+.lab-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .lab-header h1 {
@@ -17,6 +28,88 @@ body {
   color: #666;
 }
 
+.lab-commit {
+  padding: 0.5rem 1rem;
+  border: none;
+  border-radius: 0.375rem;
+  background: #1c1917;
+  color: #fff;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.lab-commit:disabled {
+  background: #d6d3d1;
+  cursor: default;
+}
+
+.lab-error {
+  margin: 0;
+  color: #b91c1c;
+}
+
+.lab-refusal {
+  border: 1px solid #b91c1c;
+  border-radius: 0.375rem;
+  padding: 0.75rem 1rem;
+  color: #b91c1c;
+}
+
+.lab-refusal p {
+  margin: 0;
+}
+
+.lab-refusal pre {
+  margin: 0.5rem 0 0;
+  overflow-x: auto;
+  font-size: 0.75rem;
+}
+
+.lab-panes {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  gap: 1.5rem;
+}
+
 .lab-token-list {
-  margin-top: 1.5rem;
+  width: 22rem;
+  overflow-y: auto;
+}
+
+.lab-empty {
+  color: #666;
+}
+
+.lab-token {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.375rem 0;
+}
+
+.lab-token-name {
+  flex: 1;
+  font-family: ui-monospace, monospace;
+  font-size: 0.8125rem;
+}
+
+.lab-token input[type="text"] {
+  width: 9rem;
+  font-family: ui-monospace, monospace;
+  font-size: 0.8125rem;
+  padding: 0.25rem 0.375rem;
+}
+
+.lab-preview {
+  flex: 1;
+  min-width: 0;
+}
+
+.lab-preview iframe {
+  width: 100%;
+  height: 100%;
+  border: 1px solid #d6d3d1;
+  border-radius: 0.5rem;
+  background: #fff;
 }
