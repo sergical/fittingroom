@@ -58,7 +58,7 @@ importers:
 
   packages/vite:
     dependencies:
-      '@tokenlab/core':
+      '@fittingroom/core':
         specifier: workspace:*
         version: link:../core
     devDependencies:

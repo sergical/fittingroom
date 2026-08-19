@@ -1,5 +1,5 @@
 {
-  "name": "tokenlab",
+  "name": "fittingroom-monorepo",
   "private": true,
   "packageManager": "pnpm@11.1.3",
   "scripts": {
@@ -7,6 +7,12 @@
     "test": "turbo run test",
     "dev": "turbo run dev",
     "lint": "turbo run lint"
+  },
+  "fledgling": {
+    "provider": "github",
+    "workflow": "release.yml",
+    "environment": "publish",
+    "permissions": "publish"
   },
   "devDependencies": {
     "@changesets/cli": "^3.0.0",

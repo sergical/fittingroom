@@ -1,8 +1,9 @@
-# TokenLab
+# fittingroom
 
-TokenLab is a design-token laboratory. Install a Vite plugin, get a live
-token-editing UI at `/__lab` inside your own app, tweak your design tokens
-in the browser, and write the edits back to your CSS.
+fittingroom is the fitting room for your app's design tokens — try looks on,
+keep what fits. Install a Vite plugin, get a live token-editing UI at
+`/__fittingroom` inside your own app, tweak your design tokens in the browser,
+and write the edits back to your CSS.
 
 It understands the shadcn/Tailwind v4 `@theme`/`:root` dialect and the
 emdash `@layer base`/`light-dark()` dialect, parsing both into a
@@ -15,9 +16,9 @@ SvelteKit); Next.js support is planned later.
 
 | Package          | Description                                             |
 | ---------------- | -------------------------------------------------------- |
-| `@tokenlab/core` | Parses CSS design tokens and writes edits back            |
-| `@tokenlab/ui`   | The laboratory UI served at `/__lab` (private)             |
-| `@tokenlab/vite` | Vite plugin that serves the laboratory UI in dev           |
+| `@fittingroom/core` | Parses CSS design tokens and writes edits back            |
+| `@fittingroom/ui`   | The laboratory UI served at `/__fittingroom` (private)             |
+| `@fittingroom/vite` | Vite plugin that serves the laboratory UI in dev           |
 
 ## Status
 

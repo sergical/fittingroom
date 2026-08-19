@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ViteDevServer } from "vite";
-import tokenlab from "../src/index.js";
+import fittingroom from "../src/index.js";
 
 /** Captures the middleware registered by configureServer without booting a real dev server. */
 function createMockServer() {
@@ -40,32 +40,32 @@ function createMockResponse() {
   };
 }
 
-describe("tokenlab", () => {
+describe("fittingroom", () => {
   it("has the expected plugin name", () => {
-    const plugin = tokenlab();
-    expect(plugin.name).toBe("tokenlab");
+    const plugin = fittingroom();
+    expect(plugin.name).toBe("fittingroom");
   });
 
-  it("responds 200 with HTML at /__lab", () => {
-    const plugin = tokenlab();
+  it("responds 200 with HTML at /__fittingroom", () => {
+    const plugin = fittingroom();
     const { server, middlewares } = createMockServer();
 
     const configureServer = plugin.configureServer as (server: ViteDevServer) => void;
     configureServer(server);
 
     expect(middlewares).toHaveLength(1);
-    expect(middlewares[0]!.route).toBe("/__lab");
+    expect(middlewares[0]!.route).toBe("/__fittingroom");
 
     const { res, headers, getBody, getStatus } = createMockResponse();
     middlewares[0]!.handler({}, res);
 
     expect(getStatus()).toBe(200);
     expect(headers["Content-Type"]).toBe("text/html");
-    expect(getBody()).toContain("TokenLab");
+    expect(getBody()).toContain("fittingroom");
   });
 
   it("respects a custom route option", () => {
-    const plugin = tokenlab({ route: "/custom-lab" });
+    const plugin = fittingroom({ route: "/custom-lab" });
     const { server, middlewares } = createMockServer();
 
     const configureServer = plugin.configureServer as (server: ViteDevServer) => void;

@@ -1,4 +1,4 @@
-import tokenlab, { type TokenlabOptions } from "./index.js";
+import fittingroom, { type FittingroomOptions } from "./index.js";
 
 /**
  * Minimal Astro integration shape, defined locally so this package does
@@ -12,13 +12,13 @@ interface AstroIntegration {
   };
 }
 
-/** Wraps the TokenLab Vite plugin as an Astro integration. */
-export function tokenlabAstro(options?: TokenlabOptions): AstroIntegration {
+/** Wraps the fittingroom Vite plugin as an Astro integration. */
+export function fittingroomAstro(options?: FittingroomOptions): AstroIntegration {
   return {
-    name: "tokenlab",
+    name: "fittingroom",
     hooks: {
       "astro:config:setup": ({ updateConfig }) => {
-        updateConfig({ vite: { plugins: [tokenlab(options)] } });
+        updateConfig({ vite: { plugins: [fittingroom(options)] } });
       },
     },
   };

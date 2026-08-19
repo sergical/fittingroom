@@ -3,7 +3,7 @@ export default function App() {
   return (
     <div className="lab-shell">
       <header className="lab-header">
-        <h1>TokenLab</h1>
+        <h1>fittingroom</h1>
         <p>design-token laboratory</p>
       </header>
       <section className="lab-token-list" aria-label="Tokens">

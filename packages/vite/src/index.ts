@@ -1,7 +1,7 @@
 import type { Plugin } from "vite";
 
-export interface TokenlabOptions {
-  /** Where the laboratory UI is served. Defaults to "/__lab". */
+export interface FittingroomOptions {
+  /** Where the laboratory UI is served. Defaults to "/__fittingroom". */
   route?: string;
 }
 
@@ -9,16 +9,16 @@ const PLACEHOLDER_HTML = (route: string) => `<!doctype html>
 <html>
   <head>
     <meta charset="utf-8" />
-    <title>TokenLab</title>
+    <title>fittingroom</title>
   </head>
   <body>
-    <p>TokenLab — laboratory UI coming soon (${route}).</p>
+    <p>fittingroom — laboratory UI coming soon (${route}).</p>
   </body>
 </html>
 `;
 
 /**
- * Serves the TokenLab laboratory UI at `/__lab` (or `options.route`)
+ * Serves the fittingroom laboratory UI at `/__fittingroom` (or `options.route`)
  * during `vite dev`. Dev-only: `apply: "serve"` keeps this out of
  * production builds entirely.
  *
@@ -27,17 +27,17 @@ const PLACEHOLDER_HTML = (route: string) => `<!doctype html>
  * origin before accepting any write — dev servers are reachable from
  * any page open in the developer's browser.
  */
-export default function tokenlab(options: TokenlabOptions = {}): Plugin {
-  const route = options.route ?? "/__lab";
+export default function fittingroom(options: FittingroomOptions = {}): Plugin {
+  const route = options.route ?? "/__fittingroom";
 
   return {
-    name: "tokenlab",
+    name: "fittingroom",
     apply: "serve",
     configureServer(server) {
-      // TODO: serve @tokenlab/ui's built dist assets instead of this
+      // TODO: serve @fittingroom/ui's built dist assets instead of this
       // placeholder page.
       // TODO: open a WebSocket RPC channel for live token updates.
-      // TODO: add a token extraction endpoint that runs @tokenlab/core's
+      // TODO: add a token extraction endpoint that runs @fittingroom/core's
       // parsers against the host app's CSS.
       server.middlewares.use(route, (req, res) => {
         res.setHeader("Content-Type", "text/html");
