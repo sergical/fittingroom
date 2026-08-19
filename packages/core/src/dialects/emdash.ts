@@ -1,8 +1,7 @@
 import postcss from "postcss";
 import valueParser from "postcss-value-parser";
-import type { Token, TokenDocument } from "../model/types.js";
+import type { Edit, Token, TokenDocument, TokenValue } from "../model/types.js";
 import type { Dialect } from "./dialect.js";
-import { patchRootDecls } from "./patch.js";
 
 /**
  * The emdash tokens.css convention: custom properties in `:root`,
@@ -20,10 +19,12 @@ export const emdash: Dialect = {
   parse(css): TokenDocument {
     const root = postcss.parse(css);
     const tokens: Token[] = [];
+    const seen = new Set<string>();
 
     root.walkRules(":root", (rule) => {
       rule.walkDecls((decl) => {
-        if (!decl.prop.startsWith("--")) return;
+        if (!decl.prop.startsWith("--") || seen.has(decl.prop)) return;
+        seen.add(decl.prop);
         tokens.push({ name: decl.prop, value: parseValue(decl.value) });
       });
     });
@@ -31,10 +32,40 @@ export const emdash: Dialect = {
     return { tokens, dialect: "emdash" };
   },
 
-  patch: patchRootDecls,
+  patch(css, edits) {
+    const root = postcss.parse(css);
+    const patched = new Set<string>();
+
+    root.walkRules(":root", (rule) => {
+      rule.walkDecls((decl) => {
+        if (!decl.prop.startsWith("--")) return;
+        const edit = edits[decl.prop];
+        if (edit === undefined || patched.has(decl.prop)) return;
+        patched.add(decl.prop);
+        decl.value = applyEdit(decl.value, edit);
+      });
+    });
+
+    return root.toString();
+  },
 };
 
-function parseValue(value: string): { raw?: string; light?: string; dark?: string } {
+/**
+ * Merges a scheme-aware edit into the declaration's current value. Only
+ * the edited halves change; the other half of a `light-dark()` pair is
+ * preserved. A dark edit to a single-valued token promotes it to a
+ * `light-dark()` pair.
+ */
+function applyEdit(value: string, edit: Edit): string {
+  if (typeof edit === "string") return edit;
+  const current = parseValue(value);
+  const light = edit.light ?? current.light ?? current.raw;
+  const dark = edit.dark ?? current.dark;
+  if (light === undefined || dark === undefined) return light ?? value;
+  return `light-dark(${light}, ${dark})`;
+}
+
+function parseValue(value: string): TokenValue {
   const parsed = valueParser(value);
   const [first] = parsed.nodes;
 

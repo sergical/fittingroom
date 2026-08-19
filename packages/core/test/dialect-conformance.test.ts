@@ -19,7 +19,16 @@ interface ConformanceCase {
   /** Expected values keyed by token name, including one light/dark pair. */
   values: Record<string, TokenValue>;
   /** One edit and the exact declaration line it must rewrite. */
-  edit: { name: string; value: string; before: string; after: string };
+  edit: Case;
+  /** A dark-half edit and the exact declaration line it must rewrite. */
+  darkEdit?: Case;
+}
+
+interface Case {
+  name: string;
+  value: string | { light?: string; dark?: string };
+  before: string;
+  after: string;
 }
 
 const cases: ConformanceCase[] = [
@@ -38,6 +47,27 @@ const cases: ConformanceCase[] = [
       value: "oklch(0.5 0.1 260)",
       before: "--primary: oklch(0.205 0 0);",
       after: "--primary: oklch(0.5 0.1 260);",
+    },
+    darkEdit: {
+      name: "--primary",
+      value: { dark: "oklch(0.8 0 0)" },
+      before: "--primary: oklch(0.922 0 0);",
+      after: "--primary: oklch(0.8 0 0);",
+    },
+  },
+  {
+    dialect: "shadcn",
+    fixture: "shadcn-theme.css",
+    tokenCount: 3,
+    values: {
+      "--color-primary": { light: "oklch(0.205 0 0)", dark: undefined },
+      "--radius-lg": { light: "0.625rem", dark: undefined },
+    },
+    edit: {
+      name: "--radius-lg",
+      value: "0.75rem",
+      before: "--radius-lg: 0.625rem;",
+      after: "--radius-lg: 0.75rem;",
     },
   },
   {
@@ -58,6 +88,12 @@ const cases: ConformanceCase[] = [
       value: "1.25rem",
       before: "--spacing-md: 1rem;",
       after: "--spacing-md: 1.25rem;",
+    },
+    darkEdit: {
+      name: "--color-bg",
+      value: { dark: "#111111" },
+      before: "--color-bg: light-dark(#ffffff, #0a0a0a);",
+      after: "--color-bg: light-dark(#ffffff, #111111);",
     },
   },
 ];
@@ -87,22 +123,76 @@ describe.each(cases)("$dialect dialect conformance", (c) => {
   });
 
   it("write() patches only the targeted declaration's line", () => {
-    const path = tempFile(css);
-    const result = createTokenSource(path).write({ [c.edit.name]: c.edit.value });
-    expect(result.status).toBe("applied");
+    expectSingleLineEdit(css, c.edit);
+  });
 
-    const before = css.split("\n");
-    const after = readFileSync(path, "utf8").split("\n");
-    expect(after).toHaveLength(before.length);
+  it("write() with a dark-half edit patches only the dark declaration's line", (ctx) => {
+    if (!c.darkEdit) return ctx.skip();
+    expectSingleLineEdit(css, c.darkEdit);
+  });
+});
 
-    const changed: number[] = [];
-    for (let i = 0; i < before.length; i++) {
-      if (before[i] !== after[i]) changed.push(i);
-    }
+/**
+ * Writes one edit and asserts exactly one line changed — the acceptance
+ * criterion that patches are single-hunk and byte-identical elsewhere.
+ */
+function expectSingleLineEdit(css: string, edit: Case): void {
+  const path = tempFile(css);
+  const result = createTokenSource(path).write({ [edit.name]: edit.value });
+  expect(result.status).toBe("applied");
 
-    expect(changed).toHaveLength(1);
-    expect(before[changed[0]!]).toContain(c.edit.before);
-    expect(after[changed[0]!]).toContain(c.edit.after);
+  const before = css.split("\n");
+  const after = readFileSync(path, "utf8").split("\n");
+  expect(after).toHaveLength(before.length);
+
+  const changed: number[] = [];
+  for (let i = 0; i < before.length; i++) {
+    if (before[i] !== after[i]) changed.push(i);
+  }
+
+  expect(changed).toHaveLength(1);
+  expect(before[changed[0]!]).toContain(edit.before);
+  expect(after[changed[0]!]).toContain(edit.after);
+}
+
+describe("duplicate declarations", () => {
+  it("shadcn: an edit patches only the first :root occurrence", () => {
+    const css = [
+      ":root {",
+      "  --primary: red;",
+      "}",
+      ".dark {",
+      "  --primary: navy;",
+      "}",
+      ":root {",
+      "  --primary: red;",
+      "}",
+      "",
+    ].join("\n");
+    expectSingleLineEdit(css, {
+      name: "--primary",
+      value: "blue",
+      before: "--primary: red;",
+      after: "--primary: blue;",
+    });
+  });
+
+  it("emdash: an edit patches only the first :root occurrence", () => {
+    const css = [
+      ":root {",
+      "  --color-bg: light-dark(#fff, #000);",
+      "}",
+      ":root {",
+      "  --color-bg: light-dark(#fff, #000);",
+      "}",
+      "",
+    ].join("\n");
+    expectSingleLineEdit(css, {
+      name: "--color-bg",
+      value: { light: "#eee" },
+      before: "--color-bg: light-dark(#fff, #000);",
+      after: "--color-bg: light-dark(#eee, #000);",
+    });
   });
 });
 

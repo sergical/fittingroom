@@ -25,8 +25,10 @@ host framework (see ADR-0001).
 tokens. Interface: `read()` and `write(edits)`. Dialect detection, parsing,
 and file patching are implementation, not interface.
 
-**Edit** — a proposed change to one token's value. Edits are previewed in the
-running app before they are committed to files.
+**Edit** — a proposed change to one token's value: a raw replacement string,
+or a `{ light?, dark? }` pair that targets one color scheme without touching
+the other. Each dialect maps the schemes onto its own convention. Edits are
+previewed in the running app before they are committed to files.
 
 **Round-trip refusal** — the write invariant: TokenSource never writes to a
 file it cannot parse and re-serialize byte-identically. A write it cannot

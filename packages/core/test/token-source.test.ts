@@ -23,6 +23,34 @@ describe("TokenSource on CSS in no known dialect", () => {
   });
 });
 
+describe("TokenSource edit validation", () => {
+  const css = ":root {\n  --primary: red;\n}\n.dark {\n  --primary: navy;\n}\n";
+
+  it("refuses an edit value that would inject CSS structure; the file is untouched", () => {
+    const path = tempFile(css);
+    const result = createTokenSource(path).write({
+      "--primary": "blue; } .evil { color: green",
+    });
+
+    expect(result.status).toBe("refused");
+    if (result.status === "refused") {
+      expect(result.reason).toContain("--primary");
+      expect(result.reason).toContain("not a single declaration value");
+    }
+    expect(readFileSync(path, "utf8")).toBe(css);
+  });
+
+  it("refuses an injecting dark-half edit too", () => {
+    const path = tempFile(css);
+    const result = createTokenSource(path).write({
+      "--primary": { dark: "navy } body { display: none" },
+    });
+
+    expect(result.status).toBe("refused");
+    expect(readFileSync(path, "utf8")).toBe(css);
+  });
+});
+
 describe("TokenSource round-trip refusal", () => {
   // Detected as shadcn (`.dark` rule) but the block is never closed,
   // so the file cannot be parsed — let alone re-serialized byte-identically.
