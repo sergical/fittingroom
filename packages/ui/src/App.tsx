@@ -1,7 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import type { Edits, Token, TokenDocument } from "@fittingroom/core";
 import { sendProtocolRequest } from "./protocol-client.js";
-import { baseValue, isSpacingToken, scaleLength, spacingEdits } from "./spacing.js";
+import {
+  baseValue,
+  isSpacingToken,
+  scaleLength,
+  spacingEdits,
+  type SpacingEdit,
+} from "./spacing.js";
 
 /** Unsaved edits live in localStorage so a reload of the lab UI keeps them. */
 const DRAFT_STORAGE_KEY = "fittingroom:draft-edits";
@@ -55,7 +61,15 @@ function loadSpacing(): SpacingState {
     const stored = JSON.parse(
       localStorage.getItem(SPACING_STORAGE_KEY) ?? "null",
     ) as SpacingState | null;
-    if (stored && typeof stored.density === "number" && stored.bases) return stored;
+    if (
+      stored &&
+      typeof stored.density === "number" &&
+      Number.isFinite(stored.density) &&
+      stored.density > 0 &&
+      stored.bases
+    ) {
+      return stored;
+    }
   } catch {
     // fall through to the default
   }
@@ -86,19 +100,21 @@ export default function App() {
    * must preview as `light-dark(draft, dark)` — a bare value would also
    * override the dark half, showing a state a commit never produces.
    */
-  const previewValue = (token: Token | undefined, draft: string): string => {
+  const previewValue = (token: Token | undefined, draft: SpacingEdit): string => {
+    const light = typeof draft === "string" ? draft : draft.light;
     if (
       documentRef.current?.dialect === "emdash" &&
       token?.value.raw === undefined &&
       token?.value.dark !== undefined
     ) {
-      return `light-dark(${draft}, ${token.value.dark})`;
+      const dark = typeof draft === "string" ? token.value.dark : draft.dark;
+      return `light-dark(${light}, ${dark})`;
     }
-    return draft;
+    return light;
   };
 
   /** Drafts plus the spacing editor's computed values, as one edit set. */
-  const mergedDrafts = (): Drafts => ({
+  const mergedDrafts = (): Record<string, SpacingEdit> => ({
     ...spacingEdits(
       documentRef.current?.tokens ?? [],
       spacingRef.current.density,
@@ -159,16 +175,20 @@ export default function App() {
    * — a bare string would tell the emdash writer to replace the whole
    * `light-dark()` value and silently drop the dark half.
    */
-  const toEdits = (drafts: Drafts): Edits =>
+  const toEdits = (drafts: Record<string, SpacingEdit>): Edits =>
     Object.fromEntries(
-      Object.entries(drafts).map(([name, draft]) => [
-        name,
-        tokenByName(name)?.value.raw === undefined ? { light: draft } : draft,
-      ]),
+      Object.entries(drafts).map(([name, draft]) => {
+        if (typeof draft !== "string") return [name, draft];
+        return [
+          name,
+          tokenByName(name)?.value.raw === undefined ? { light: draft } : draft,
+        ];
+      }),
     );
 
   const commit = async () => {
     const committed = mergedDrafts();
+    const submittedSpacing = spacingRef.current;
     const response = await sendProtocolRequest({
       type: "commit",
       edits: toEdits(committed),
@@ -182,8 +202,22 @@ export default function App() {
         ),
       );
       // The computed spacing values are in the file now, so they are the
-      // new originals: the multiplier returns to ×1 over them.
-      setSpacing(NO_SPACING);
+      // new originals: the multiplier returns to ×1 over them. Spacing
+      // work done while the request was in flight is rebased onto the
+      // new originals so its effective values (base × density) carry
+      // over instead of vanishing.
+      setSpacing((current) => {
+        if (current === submittedSpacing) return NO_SPACING;
+        return {
+          density: current.density / submittedSpacing.density,
+          bases: Object.fromEntries(
+            Object.entries(current.bases).map(([name, base]) => [
+              name,
+              scaleLength(base, submittedSpacing.density),
+            ]),
+          ),
+        };
+      });
       setRefusal(null);
       setError(null);
       const read = await sendProtocolRequest({ type: "read" });
@@ -294,17 +328,21 @@ export default function App() {
                   aria-label="Density multiplier value"
                   value={spacing.density}
                   onChange={(event) => {
-                    const density = Number(event.target.value);
-                    if (Number.isFinite(density) && density > 0) {
-                      setSpacing((previous) => ({ ...previous, density }));
-                    }
+                    const typed = Number(event.target.value);
+                    if (!Number.isFinite(typed)) return;
+                    // Hold the typed value to the slider's 0.5–2 range so
+                    // an out-of-range entry cannot emit invalid CSS.
+                    const density = Math.min(2, Math.max(0.5, typed));
+                    setSpacing((previous) => ({ ...previous, density }));
                   }}
                 />
                 <button
                   type="button"
                   className="lab-reset"
                   aria-label="Reset spacing"
-                  disabled={Object.keys(derivedSpacing).length === 0}
+                  disabled={
+                    spacing.density === 1 && Object.keys(spacing.bases).length === 0
+                  }
                   onClick={() => setSpacing(NO_SPACING)}
                 >
                   Reset
