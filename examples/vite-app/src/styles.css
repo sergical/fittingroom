@@ -7,6 +7,9 @@
   --muted-foreground: #78716c;
   --border: #e7e5e4;
   --radius: 0.5rem;
+  --spacing-sm: 0.75rem;
+  --spacing-md: 1.25rem;
+  --spacing-lg: 2rem;
 }
 
 .dark {
@@ -41,7 +44,7 @@ body {
 }
 
 .hero button {
-  padding: 0.625rem 1.25rem;
+  padding: calc(var(--spacing-sm) / 2) var(--spacing-md);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--primary);
@@ -51,8 +54,8 @@ body {
 }
 
 .hero .card {
-  margin-top: 2rem;
-  padding: 1rem 1.25rem;
+  margin-top: var(--spacing-lg);
+  padding: var(--spacing-sm) var(--spacing-md);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--muted);

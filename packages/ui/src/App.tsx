@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import type { Edits, Token, TokenDocument } from "@fittingroom/core";
 import { sendProtocolRequest } from "./protocol-client.js";
+import { baseValue, isSpacingToken, scaleLength, spacingEdits } from "./spacing.js";
 
 /** Unsaved edits live in localStorage so a reload of the lab UI keeps them. */
 const DRAFT_STORAGE_KEY = "fittingroom:draft-edits";
+/** The spacing controls (density, per-token bases) persist the same way. */
+const SPACING_STORAGE_KEY = "fittingroom:spacing-draft";
 
 const COLOR_VALUE =
   /^(#[0-9a-f]{3,8}|(rgb|rgba|hsl|hsla|oklch|oklab|lab|lch|color)\(.*\))$/i;
@@ -27,6 +30,18 @@ function isColorValue(value: string): boolean {
 
 type Drafts = Record<string, string>;
 
+/**
+ * The spacing editor's state: the headline density multiplier over all
+ * spacing tokens, plus per-token base overrides that compose with it
+ * (effective value = base × density).
+ */
+interface SpacingState {
+  density: number;
+  bases: Record<string, string>;
+}
+
+const NO_SPACING: SpacingState = { density: 1, bases: {} };
+
 function loadDrafts(): Drafts {
   try {
     return JSON.parse(localStorage.getItem(DRAFT_STORAGE_KEY) ?? "{}") as Drafts;
@@ -35,21 +50,31 @@ function loadDrafts(): Drafts {
   }
 }
 
-/** The value an edit replaces: the raw value, or the light half of a pair. */
-function baseValue(token: Token): string {
-  return token.value.raw ?? token.value.light ?? "";
+function loadSpacing(): SpacingState {
+  try {
+    const stored = JSON.parse(
+      localStorage.getItem(SPACING_STORAGE_KEY) ?? "null",
+    ) as SpacingState | null;
+    if (stored && typeof stored.density === "number" && stored.bases) return stored;
+  } catch {
+    // fall through to the default
+  }
+  return NO_SPACING;
 }
 
 export default function App() {
   const [tokenDocument, setTokenDocument] = useState<TokenDocument | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [drafts, setDrafts] = useState<Drafts>(loadDrafts);
+  const [spacing, setSpacing] = useState<SpacingState>(loadSpacing);
   const [refusal, setRefusal] = useState<{ reason: string; diff: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const draftsRef = useRef(drafts);
   draftsRef.current = drafts;
+  const spacingRef = useRef(spacing);
+  spacingRef.current = spacing;
   const documentRef = useRef(tokenDocument);
   documentRef.current = tokenDocument;
 
@@ -72,9 +97,19 @@ export default function App() {
     return draft;
   };
 
+  /** Drafts plus the spacing editor's computed values, as one edit set. */
+  const mergedDrafts = (): Drafts => ({
+    ...spacingEdits(
+      documentRef.current?.tokens ?? [],
+      spacingRef.current.density,
+      spacingRef.current.bases,
+    ),
+    ...draftsRef.current,
+  });
+
   const pushPreview = () => {
     const edits = Object.fromEntries(
-      Object.entries(draftsRef.current).map(([name, draft]) => [
+      Object.entries(mergedDrafts()).map(([name, draft]) => [
         name,
         previewValue(tokenByName(name), draft),
       ]),
@@ -95,8 +130,9 @@ export default function App() {
 
   useEffect(() => {
     localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(drafts));
+    localStorage.setItem(SPACING_STORAGE_KEY, JSON.stringify(spacing));
     pushPreview();
-  }, [drafts, tokenDocument]);
+  }, [drafts, spacing, tokenDocument]);
 
   const setDraft = (token: Token, value: string) => {
     setDrafts((previous) => {
@@ -105,6 +141,16 @@ export default function App() {
         return rest;
       }
       return { ...previous, [token.name]: value };
+    });
+  };
+
+  const setSpacingBase = (token: Token, value: string) => {
+    setSpacing((previous) => {
+      if (value === baseValue(token)) {
+        const { [token.name]: _dropped, ...bases } = previous.bases;
+        return { ...previous, bases };
+      }
+      return { ...previous, bases: { ...previous.bases, [token.name]: value } };
     });
   };
 
@@ -122,7 +168,7 @@ export default function App() {
     );
 
   const commit = async () => {
-    const committed = draftsRef.current;
+    const committed = mergedDrafts();
     const response = await sendProtocolRequest({
       type: "commit",
       edits: toEdits(committed),
@@ -135,6 +181,9 @@ export default function App() {
           Object.entries(previous).filter(([name, draft]) => committed[name] !== draft),
         ),
       );
+      // The computed spacing values are in the file now, so they are the
+      // new originals: the multiplier returns to ×1 over them.
+      setSpacing(NO_SPACING);
       setRefusal(null);
       setError(null);
       const read = await sendProtocolRequest({ type: "read" });
@@ -148,7 +197,13 @@ export default function App() {
 
   const colorTokens =
     tokenDocument?.tokens.filter((token) => isColorValue(baseValue(token))) ?? [];
-  const draftCount = Object.keys(drafts).length;
+  const spacingTokens = tokenDocument?.tokens.filter(isSpacingToken) ?? [];
+  const derivedSpacing = spacingEdits(
+    tokenDocument?.tokens ?? [],
+    spacing.density,
+    spacing.bases,
+  );
+  const draftCount = Object.keys({ ...derivedSpacing, ...drafts }).length;
 
   return (
     <div className="lab-shell">
@@ -182,12 +237,15 @@ export default function App() {
               No tokens detected. Supported dialects: shadcn, emdash.
             </p>
           )}
-          {loaded && tokenDocument && colorTokens.length === 0 && (
+          {loaded && tokenDocument && colorTokens.length === 0 && spacingTokens.length === 0 && (
             <p className="lab-empty">
               {tokenDocument.tokens.length} token
               {tokenDocument.tokens.length === 1 ? "" : "s"} detected, but none
-              hold a color value the editor can edit.
+              hold a color or spacing value the editor can edit.
             </p>
+          )}
+          {colorTokens.length > 0 && spacingTokens.length > 0 && (
+            <h2 className="lab-section-title">Colors</h2>
           )}
           {colorTokens.map((token) => {
             const current = drafts[token.name] ?? baseValue(token);
@@ -209,6 +267,69 @@ export default function App() {
               </div>
             );
           })}
+          {spacingTokens.length > 0 && (
+            <>
+              <h2 className="lab-section-title">Spacing</h2>
+              <div className="lab-density">
+                <span className="lab-token-name">density</span>
+                <input
+                  type="range"
+                  min="0.5"
+                  max="2"
+                  step="0.05"
+                  aria-label="Density multiplier"
+                  value={spacing.density}
+                  onChange={(event) =>
+                    setSpacing((previous) => ({
+                      ...previous,
+                      density: Number(event.target.value),
+                    }))
+                  }
+                />
+                <input
+                  type="number"
+                  min="0.5"
+                  max="2"
+                  step="0.05"
+                  aria-label="Density multiplier value"
+                  value={spacing.density}
+                  onChange={(event) => {
+                    const density = Number(event.target.value);
+                    if (Number.isFinite(density) && density > 0) {
+                      setSpacing((previous) => ({ ...previous, density }));
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  className="lab-reset"
+                  aria-label="Reset spacing"
+                  disabled={Object.keys(derivedSpacing).length === 0}
+                  onClick={() => setSpacing(NO_SPACING)}
+                >
+                  Reset
+                </button>
+              </div>
+              {spacingTokens.map((token) => {
+                const base = spacing.bases[token.name] ?? baseValue(token);
+                const computed = scaleLength(base, spacing.density);
+                return (
+                  <div className="lab-token" key={token.name}>
+                    <span className="lab-token-name">{token.name}</span>
+                    {computed !== base && (
+                      <span className="lab-token-computed">= {computed}</span>
+                    )}
+                    <input
+                      type="text"
+                      aria-label={`${token.name} value`}
+                      value={base}
+                      onChange={(event) => setSpacingBase(token, event.target.value)}
+                    />
+                  </div>
+                );
+              })}
+            </>
+          )}
         </section>
 
         <section className="lab-preview" aria-label="Preview">
