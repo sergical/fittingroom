@@ -9,9 +9,9 @@ import {
   type SpacingEdit,
 } from "./spacing.js";
 import {
-  composeShadow,
+  composeShadowLayers,
   isShadowToken,
-  parseShadow,
+  parseShadowLayers,
   SHADOW_PRESETS,
   type DecomposedShadow,
   type ShadowLength,
@@ -462,14 +462,30 @@ const SHADOW_SLIDERS: ReadonlyArray<{
   { part: "spread", label: "spread", min: -40, max: 40 },
 ];
 
-/** Slider steps follow the unit: whole px, fine steps for rem/em. */
-const sliderStep = (unit: string) => (unit === "" || unit === "px" ? 1 : 0.05);
+/**
+ * Slider steps follow the unit — whole px, fine steps for rem/em — and
+ * refine further when the current value itself is fractional, so a
+ * parsed value like 2.5px is reachable without snapping away.
+ */
+const sliderStep = ({ value, unit }: ShadowLength) => {
+  if (unit !== "" && unit !== "px") return 0.05;
+  return Number.isInteger(value) ? 1 : 0.1;
+};
+
+/**
+ * A shadow color is either empty, a var() reference, or something the
+ * browser accepts as a color. Anything else must not reach a draft: the
+ * preview would silently drop it, but Commit could still write the
+ * invalid box-shadow to the token file.
+ */
+const isShadowColor = (value: string): boolean =>
+  value === "" || /^var\(--[\w-]+\)$/.test(value) || isColorValue(value);
 
 /**
  * The decomposed half of the shadow editor. Every slider move composes
- * the parts back into one string before it becomes a draft — the token
+ * the layers back into one string before it becomes a draft — the token
  * never stores anything but the composed value. A value the sliders
- * cannot decompose (multi-layer, var()) degrades to a text input.
+ * cannot decompose (calc() lengths, keywords) degrades to a text input.
  */
 function ShadowSliders({
   token,
@@ -480,8 +496,8 @@ function ShadowSliders({
   value: string;
   onChange: (value: string) => void;
 }) {
-  const shadow = parseShadow(value);
-  if (!shadow) {
+  const layers = parseShadowLayers(value);
+  if (!layers) {
     return (
       <div className="lab-token">
         <input
@@ -493,24 +509,59 @@ function ShadowSliders({
       </div>
     );
   }
-  const setPart = (part: Partial<DecomposedShadow>) =>
-    onChange(composeShadow({ ...shadow, ...part }));
+  const setLayer = (index: number, part: Partial<DecomposedShadow>) =>
+    onChange(
+      composeShadowLayers(
+        layers.map((layer, i) => (i === index ? { ...layer, ...part } : layer)),
+      ),
+    );
   return (
     <div className="lab-shadow-sliders">
-      {SHADOW_SLIDERS.map(({ part, label, min, max }) => {
+      {layers.map((layer, index) => (
+        <ShadowLayerControls
+          key={index}
+          label={layers.length > 1 ? `${token.name} layer ${index + 1}` : token.name}
+          shadow={layer}
+          onChange={(part) => setLayer(index, part)}
+        />
+      ))}
+    </div>
+  );
+}
+
+function ShadowLayerControls({
+  label,
+  shadow,
+  onChange,
+}: {
+  label: string;
+  shadow: DecomposedShadow;
+  onChange: (part: Partial<DecomposedShadow>) => void;
+}) {
+  // Invalid color text stays local until it parses; only valid colors
+  // compose into the draft, so Commit can never write it to the file.
+  const [colorDraft, setColorDraft] = useState<string | null>(null);
+  return (
+    <>
+      {SHADOW_SLIDERS.map(({ part, label: partLabel, min, max }) => {
         const length: ShadowLength = shadow[part];
         return (
           <div className="lab-token" key={part}>
-            <span className="lab-token-name">{label}</span>
+            <span className="lab-token-name">{partLabel}</span>
             <input
               type="range"
-              min={min}
-              max={max}
-              step={sliderStep(length.unit)}
-              aria-label={`${token.name} ${label}`}
+              // Widen the range around out-of-band parsed values so the
+              // thumb starts on the real value instead of jumping on
+              // the first drag.
+              min={Math.min(min, Math.floor(length.value))}
+              max={Math.max(max, Math.ceil(length.value))}
+              step={sliderStep(length)}
+              aria-label={`${label} ${partLabel}`}
               value={length.value}
               onChange={(event) =>
-                setPart({ [part]: { ...length, value: Number(event.target.value) } })
+                onChange({
+                  [part]: { value: Number(event.target.value), unit: length.unit },
+                })
               }
             />
             <span className="lab-token-computed">
@@ -524,11 +575,20 @@ function ShadowSliders({
         <span className="lab-token-name">color</span>
         <input
           type="text"
-          aria-label={`${token.name} color`}
-          value={shadow.color}
-          onChange={(event) => setPart({ color: event.target.value })}
+          aria-label={`${label} color`}
+          value={colorDraft ?? shadow.color}
+          onBlur={() => setColorDraft(null)}
+          onChange={(event) => {
+            const next = event.target.value;
+            if (isShadowColor(next)) {
+              setColorDraft(null);
+              onChange({ color: next });
+            } else {
+              setColorDraft(next);
+            }
+          }}
         />
       </div>
-    </div>
+    </>
   );
 }
