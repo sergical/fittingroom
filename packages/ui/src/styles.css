@@ -1,0 +1,22 @@
+body {
+  margin: 0;
+  font-family: system-ui, sans-serif;
+}
+
+.lab-shell {
+  padding: 1.5rem;
+}
+
+.lab-header h1 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.lab-header p {
+  margin: 0.25rem 0 0;
+  color: #666;
+}
+
+.lab-token-list {
+  margin-top: 1.5rem;
+}

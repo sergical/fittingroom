@@ -1,0 +1,10 @@
+@layer base {
+  :root {
+    --color-bg: light-dark(#ffffff, #0a0a0a);
+    --color-fg: light-dark(#111111, #f5f5f5);
+    --color-brand: light-dark(oklch(0.6 0.2 260), oklch(0.75 0.2 260));
+    --font-sans: "Inter", ui-sans-serif, system-ui;
+    --spacing-md: 1rem;
+    --radius-md: 0.5rem;
+  }
+}

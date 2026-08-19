@@ -1,0 +1,16 @@
+{
+  "name": "tokenlab",
+  "private": true,
+  "packageManager": "pnpm@11.1.3",
+  "scripts": {
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "dev": "turbo run dev",
+    "lint": "turbo run lint"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^3.0.0",
+    "turbo": "^2.10.10",
+    "typescript": "^5.9.3"
+  }
+}
