@@ -13,19 +13,28 @@ export function isEdits(value: unknown): value is Edits {
     return false;
   }
   return Object.values(value).every(
-    (edit) =>
-      typeof edit === "string" ||
-      (typeof edit === "object" &&
-        edit !== null &&
-        !Array.isArray(edit) &&
-        halfIsAbsentOrString(edit, "light") &&
-        halfIsAbsentOrString(edit, "dark")),
+    (edit) => typeof edit === "string" || isObjectEdit(edit),
   );
 }
 
-function halfIsAbsentOrString(edit: object, half: "light" | "dark"): boolean {
-  const value = (edit as Record<string, unknown>)[half];
-  return value === undefined || typeof value === "string";
+/**
+ * An object edit must name at least one scheme half and nothing else.
+ * A shape like `{"value": "red"}` would otherwise ride through every
+ * filter, preview as nothing, and still count as a committed draft.
+ */
+function isObjectEdit(edit: unknown): boolean {
+  if (typeof edit !== "object" || edit === null || Array.isArray(edit)) {
+    return false;
+  }
+  const keys = Object.keys(edit);
+  return (
+    keys.length > 0 &&
+    keys.every(
+      (key) =>
+        (key === "light" || key === "dark") &&
+        typeof (edit as Record<string, unknown>)[key] === "string",
+    )
+  );
 }
 
 /**

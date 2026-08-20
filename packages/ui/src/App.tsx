@@ -764,7 +764,10 @@ export default function App({
                       <button
                         type="button"
                         aria-label={`Apply ${fit.name}`}
-                        disabled={applying}
+                        // A pending Apply or Mutation is about to land its
+                        // edit set; a second in-flight set would race it and
+                        // desync the drafts from the active Mutation.
+                        disabled={applying || mutating}
                         onClick={() => void applyFit(fit.name)}
                       >
                         Apply

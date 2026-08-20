@@ -49,10 +49,26 @@ interface CliSpec {
   args(prompt: string): string[];
 }
 
-/** Detection order within CLIs; `detectProviders` keeps it. */
+/**
+ * Detection order within CLIs; `detectProviders` keeps it. Each argv pins
+ * the CLI to a read-only mode (`--permission-mode plan`, `--sandbox
+ * read-only`): a Provider proposes Edits over stdout, and the commit path
+ * is the only place a Mutation may touch files — a prompt that asks the
+ * CLI to edit the token CSS directly must not be able to.
+ */
 const CLI_SPECS: CliSpec[] = [
-  { id: "claude", label: "Claude CLI", binary: "claude", args: (p) => ["-p", p] },
-  { id: "codex", label: "Codex CLI", binary: "codex", args: (p) => ["exec", p] },
+  {
+    id: "claude",
+    label: "Claude CLI",
+    binary: "claude",
+    args: (p) => ["-p", "--permission-mode", "plan", p],
+  },
+  {
+    id: "codex",
+    label: "Codex CLI",
+    binary: "codex",
+    args: (p) => ["exec", "--sandbox", "read-only", p],
+  },
 ];
 
 function cliProvider(spec: CliSpec, executable: string): Provider {

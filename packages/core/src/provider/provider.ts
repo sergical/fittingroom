@@ -69,9 +69,21 @@ export function parseMutationEdits(text: string): Edits {
   let edits: Edits | null = null;
   let depth = 0;
   let start = -1;
+  let inString = false;
+  let escaped = false;
   for (let i = 0; i < text.length; i++) {
     const char = text[i];
-    if (char === "{") {
+    // Braces inside JSON strings ({"--content": "}"}) are values, not
+    // structure; skip them so a quoted brace cannot unbalance the scan.
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (char === "\\") escaped = true;
+      else if (char === '"') inString = false;
+      continue;
+    }
+    if (char === '"' && depth > 0) {
+      inString = true;
+    } else if (char === "{") {
       if (depth === 0) start = i;
       depth++;
     } else if (char === "}" && depth > 0) {

@@ -76,9 +76,10 @@ describe("claude CLI adapter contract", () => {
       "--radius": "1rem",
     });
     const argv = argvOf(dir);
-    expect(argv[0]).toBe("-p");
-    expect(argv[1]).toContain("1970s ski lodge");
-    expect(argv[1]).toContain("--primary");
+    // Read-only mode: the CLI proposes Edits; only the commit path writes.
+    expect(argv.slice(0, 3)).toEqual(["-p", "--permission-mode", "plan"]);
+    expect(argv[3]).toContain("1970s ski lodge");
+    expect(argv[3]).toContain("--primary");
   });
 
   it("a follow-up prompt carries the Mutation being refined", async () => {
@@ -91,7 +92,7 @@ describe("claude CLI adapter contract", () => {
       baseEdits: { "--radius": "1rem" },
     });
 
-    expect(argvOf(dir)[1]).toContain('"--radius": "1rem"');
+    expect(argvOf(dir)[3]).toContain('"--radius": "1rem"');
   });
 
   it("rejects output that contains no edit set", async () => {
@@ -116,8 +117,29 @@ describe("codex CLI adapter contract", () => {
 
     expect(edits).toEqual({ "--primary": "teal" });
     const argv = argvOf(dir);
-    expect(argv[0]).toBe("exec");
-    expect(argv[1]).toContain("make it teal");
+    // Read-only sandbox: the CLI proposes Edits; only the commit path writes.
+    expect(argv.slice(0, 3)).toEqual(["exec", "--sandbox", "read-only"]);
+    expect(argv[3]).toContain("make it teal");
+  });
+});
+
+describe("edit-set extraction", () => {
+  it("a quoted brace inside a value does not unbalance the scan", async () => {
+    const dir = stubBinaryDir("claude", '{"--primary": "}"}');
+    const [claude] = detectProviders({ env: { PATH: dir } });
+
+    await expect(claude.mutate({ prompt: "x", document })).resolves.toEqual({
+      "--primary": "}",
+    });
+  });
+
+  it("rejects an object edit that names no scheme half", async () => {
+    const dir = stubBinaryDir("claude", '{"--primary": {"value": "red"}}');
+    const [claude] = detectProviders({ env: { PATH: dir } });
+
+    await expect(claude.mutate({ prompt: "x", document })).rejects.toThrow(
+      /no JSON edit set/,
+    );
   });
 });
 
