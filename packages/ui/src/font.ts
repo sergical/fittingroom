@@ -2,12 +2,14 @@ import type { Token } from "@fittingroom/core";
 
 /**
  * One auditionable Google Font: its family name as Google Fonts spells
- * it, and the generic fallback appended when the token's value has no
- * fallback stack of its own.
+ * it, the generic fallback appended when the token's value has no
+ * fallback stack of its own, and — for the few families that ship
+ * fewer faces — the weights the css2 API actually serves.
  */
 export interface GoogleFont {
   family: string;
   fallback: "sans-serif" | "serif" | "monospace";
+  weights?: string;
 }
 
 /**
@@ -19,7 +21,7 @@ export const GOOGLE_FONTS: readonly GoogleFont[] = [
   { family: "DM Sans", fallback: "sans-serif" },
   { family: "Figtree", fallback: "sans-serif" },
   { family: "Inter", fallback: "sans-serif" },
-  { family: "Lato", fallback: "sans-serif" },
+  { family: "Lato", fallback: "sans-serif", weights: "400;700" },
   { family: "Manrope", fallback: "sans-serif" },
   { family: "Montserrat", fallback: "sans-serif" },
   { family: "Nunito", fallback: "sans-serif" },
@@ -39,7 +41,7 @@ export const GOOGLE_FONTS: readonly GoogleFont[] = [
   { family: "IBM Plex Mono", fallback: "monospace" },
   { family: "JetBrains Mono", fallback: "monospace" },
   { family: "Source Code Pro", fallback: "monospace" },
-  { family: "Space Mono", fallback: "monospace" },
+  { family: "Space Mono", fallback: "monospace", weights: "400;700" },
 ];
 
 export function googleFontByFamily(family: string): GoogleFont | undefined {
@@ -47,17 +49,52 @@ export function googleFontByFamily(family: string): GoogleFont | undefined {
 }
 
 /**
+ * `--font-*` names claimed by non-family CSS font properties. Tokens in
+ * these sub-namespaces hold sizes, weights, and the like — offering a
+ * family picker for them would overwrite a number with a font stack.
+ */
+const NON_FAMILY_FONT_TOKEN =
+  /^--font-(size|weight|style|stretch|variant|feature|optical|smoothing|kerning|display|leading|tracking)(-|$)/;
+
+/**
  * Font tokens are recognized by the explicit category when the source
- * provides one, or by the `--font` namespace both v1 dialects use.
+ * provides one, or by the `--font` namespace both v1 dialects use —
+ * minus the sub-namespaces that hold non-family font properties.
  */
 export function isFontToken(token: Token): boolean {
-  return token.category === "font" || /^--font(-|$)/.test(token.name);
+  if (token.category === "font") return true;
+  return /^--font(-|$)/.test(token.name) && !NON_FAMILY_FONT_TOKEN.test(token.name);
+}
+
+/**
+ * A font-family stack split on its top-level commas only: a comma
+ * inside a quoted family name ("ACME, Inc.") stays part of that name.
+ */
+function splitFamilies(value: string): string[] {
+  const families: string[] = [];
+  let current = "";
+  let quote: '"' | "'" | null = null;
+  for (const char of value) {
+    if (char === quote) {
+      quote = null;
+      current += char;
+    } else if (quote === null && (char === '"' || char === "'")) {
+      quote = char;
+      current += char;
+    } else if (quote === null && char === ",") {
+      families.push(current.trim());
+      current = "";
+    } else {
+      current += char;
+    }
+  }
+  families.push(current.trim());
+  return families;
 }
 
 /** The first family in a font-family stack, without its quotes. */
 export function primaryFamily(value: string): string {
-  const first = value.split(",")[0].trim();
-  return first.replace(/^(['"])(.*)\1$/, "$2");
+  return splitFamilies(value)[0].replace(/^(['"])(.*)\1$/, "$2");
 }
 
 /**
@@ -67,18 +104,21 @@ export function primaryFamily(value: string): string {
  * a committed family the app never loads must still degrade sanely.
  */
 export function withFamily(value: string, font: GoogleFont): string {
-  const fallbacks = value.split(",").slice(1).map((family) => family.trim());
+  const fallbacks = splitFamilies(value).slice(1);
   if (fallbacks.length === 0) fallbacks.push(font.fallback);
   return [`"${font.family}"`, ...fallbacks].join(", ");
 }
 
 /** Weights the audition and the handed-over import both cover. */
-const WEIGHTS = "400;500;600;700";
+const DEFAULT_WEIGHTS = "400;500;600;700";
 
 /** One css2 stylesheet URL loading every given family. */
 export function googleFontsUrl(families: string[]): string {
   const params = families
-    .map((family) => `family=${family.replaceAll(" ", "+")}:wght@${WEIGHTS}`)
+    .map((family) => {
+      const weights = googleFontByFamily(family)?.weights ?? DEFAULT_WEIGHTS;
+      return `family=${family.replaceAll(" ", "+")}:wght@${weights}`;
+    })
     .join("&");
   return `https://fonts.googleapis.com/css2?${params}&display=swap`;
 }

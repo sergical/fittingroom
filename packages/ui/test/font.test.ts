@@ -30,6 +30,14 @@ describe("isFontToken", () => {
     expect(isFontToken(token("--fontx", "serif"))).toBe(false);
     expect(isFontToken(token("--spacing-md", "1rem"))).toBe(false);
   });
+
+  it("rejects --font-* tokens holding non-family font properties", () => {
+    expect(isFontToken(token("--font-size", "16px"))).toBe(false);
+    expect(isFontToken(token("--font-size-lg", "1.25rem"))).toBe(false);
+    expect(isFontToken(token("--font-weight-bold", "700"))).toBe(false);
+    expect(isFontToken(token("--font-style", "italic"))).toBe(false);
+    expect(isFontToken(token("--font-feature-settings", '"liga"'))).toBe(false);
+  });
 });
 
 describe("primaryFamily", () => {
@@ -38,6 +46,11 @@ describe("primaryFamily", () => {
     expect(primaryFamily('"Inter", sans-serif')).toBe("Inter");
     expect(primaryFamily("'Playfair Display', serif")).toBe("Playfair Display");
     expect(primaryFamily("Georgia")).toBe("Georgia");
+  });
+
+  it("keeps a comma inside a quoted family name", () => {
+    expect(primaryFamily('"ACME, Inc.", sans-serif')).toBe("ACME, Inc.");
+    expect(primaryFamily("'Foo, Bar', serif")).toBe("Foo, Bar");
   });
 });
 
@@ -55,6 +68,15 @@ describe("withFamily", () => {
   it("appends the font's generic fallback when the value has none", () => {
     expect(withFamily("Georgia", lora)).toBe('"Lora", serif');
   });
+
+  it("treats a quoted family containing a comma as one family", () => {
+    expect(withFamily('"ACME, Inc.", sans-serif', inter)).toBe(
+      '"Inter", sans-serif',
+    );
+    expect(withFamily('serif, "ACME, Inc.", sans-serif', inter)).toBe(
+      '"Inter", "ACME, Inc.", sans-serif',
+    );
+  });
 });
 
 describe("googleFontsUrl", () => {
@@ -64,6 +86,15 @@ describe("googleFontsUrl", () => {
     );
     expect(googleFontsUrl(["Playfair Display", "Inter"])).toBe(
       "https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap",
+    );
+  });
+
+  it("requests only the weights a family actually serves", () => {
+    expect(googleFontsUrl(["Space Mono"])).toBe(
+      "https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap",
+    );
+    expect(googleFontsUrl(["Lato"])).toBe(
+      "https://fonts.googleapis.com/css2?family=Lato:wght@400;700&display=swap",
     );
   });
 });
