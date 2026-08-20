@@ -18,6 +18,27 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
+  examples/emdash-app:
+    devDependencies:
+      '@types/node':
+        specifier: ^26.2.0
+        version: 26.2.0
+      fittingroom:
+        specifier: workspace:*
+        version: link:../../packages/vite
+      playwright-core:
+        specifier: 1.60.0
+        version: 1.60.0
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vite:
+        specifier: ^7.3.6
+        version: 7.3.6(@types/node@26.2.0)(lightningcss@1.33.0)(yaml@2.9.0)
+      vitest:
+        specifier: ^4.1.10
+        version: 4.1.10(@types/node@26.2.0)(jsdom@30.0.1)(vite@7.3.6(@types/node@26.2.0)(lightningcss@1.33.0)(yaml@2.9.0))
+
   examples/vite-app:
     devDependencies:
       '@types/node':
