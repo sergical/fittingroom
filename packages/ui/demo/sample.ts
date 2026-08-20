@@ -1,4 +1,4 @@
-import type { TokenDocument } from "@fittingroom/core";
+import type { TokenDocument } from "@fittingroom/core/browser";
 
 /**
  * The hosted demo's sample TokenDocument: shadcn-shaped, with at least

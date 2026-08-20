@@ -3,7 +3,7 @@ import {
   createFakeAdapter,
   type ProtocolAdapter,
   type ProtocolResponse,
-} from "@fittingroom/core";
+} from "@fittingroom/core/browser";
 import { demoDocument, sampleCss } from "./sample.js";
 
 const COMMIT_REASON =
