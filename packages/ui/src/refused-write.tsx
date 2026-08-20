@@ -18,7 +18,20 @@ export default function RefusedWrite({
   const [DiffRenderer, setDiffRenderer] = useState<ComponentType<{
     patch: string;
   }> | null>(null);
+  const [copyFailed, setCopyFailed] = useState(false);
   const hasDiff = diff !== "";
+
+  // navigator.clipboard is undefined on non-secure origins, and
+  // writeText rejects when the user denies permission; both surface as
+  // a visible failure instead of a silent no-op.
+  const copyPatch = async () => {
+    try {
+      await navigator.clipboard.writeText(diff);
+      setCopyFailed(false);
+    } catch {
+      setCopyFailed(true);
+    }
+  };
 
   useEffect(() => {
     if (!hasDiff) return;
@@ -42,13 +55,15 @@ export default function RefusedWrite({
       {hasDiff && (
         <>
           {DiffRenderer ? <DiffRenderer patch={diff} /> : <pre>{diff}</pre>}
-          <button
-            type="button"
-            className="lab-copy"
-            onClick={() => void navigator.clipboard.writeText(diff)}
-          >
+          <button type="button" className="lab-copy" onClick={copyPatch}>
             Copy patch
           </button>
+          {copyFailed && (
+            <p role="alert">
+              Copying failed — select the patch text above and copy it
+              manually.
+            </p>
+          )}
         </>
       )}
     </section>

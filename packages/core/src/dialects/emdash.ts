@@ -42,7 +42,7 @@ export const emdash: Dialect = {
         const edit = edits[decl.prop];
         if (edit === undefined || patched.has(decl.prop)) return;
         patched.add(decl.prop);
-        decl.value = applyEdit(decl.value, edit);
+        decl.value = applyEmdashEdit(decl.value, edit);
       });
     });
 
@@ -54,9 +54,10 @@ export const emdash: Dialect = {
  * Merges a scheme-aware edit into the declaration's current value. Only
  * the edited halves change; the other half of a `light-dark()` pair is
  * preserved. A dark edit to a single-valued token promotes it to a
- * `light-dark()` pair.
+ * `light-dark()` pair. Exported so the refusal-diff builder can mirror
+ * the exact change this dialect would have made.
  */
-function applyEdit(value: string, edit: Edit): string {
+export function applyEmdashEdit(value: string, edit: Edit): string {
   if (typeof edit === "string") return edit;
   const current = parseValue(value);
   const light = edit.light ?? current.light ?? current.raw;

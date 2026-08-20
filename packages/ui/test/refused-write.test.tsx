@@ -72,6 +72,34 @@ describe("the refused-write surface", () => {
     expect(surface).toBeTruthy();
   });
 
+  it("a rejected clipboard write shows a fallback message", async () => {
+    Object.assign(navigator, {
+      clipboard: {
+        writeText: vi.fn().mockRejectedValue(new Error("denied")),
+      },
+    });
+    const surface = await commitEdit();
+
+    fireEvent.click(screen.getByRole("button", { name: "Copy patch" }));
+
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "Copying failed",
+    );
+    // The patch stays visible for manual copying.
+    expect(surface.textContent).toContain("+  --primary: green;");
+  });
+
+  it("a missing clipboard API shows the fallback message instead of throwing", async () => {
+    Object.assign(navigator, { clipboard: undefined });
+    await commitEdit();
+
+    fireEvent.click(screen.getByRole("button", { name: "Copy patch" }));
+
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "Copying failed",
+    );
+  });
+
   it("a diff-less refusal shows the reason without a copy action", async () => {
     const surface = await commitEdit(
       createFakeAdapter({ refusal: { reason: "no known dialect", diff: "" } }),
