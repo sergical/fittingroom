@@ -46,9 +46,10 @@ jobs:
       # The UI build produces both the plugin-served dist and the demo
       # site (dist-demo); its workspace dependencies build first.
       - run: pnpm --filter @fittingroom/ui... build
-      - uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          workingDirectory: packages/ui
-          command: deploy
+      # wrangler-action shells out to npm, which cannot resolve the
+      # workspace: protocol this monorepo uses. Run the workspace's own
+      # wrangler through pnpm instead, so the version comes from the lockfile.
+      - run: pnpm --filter @fittingroom/ui exec wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
