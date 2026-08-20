@@ -7,11 +7,14 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import type { Provider } from "../provider/provider.js";
 import type { TokenSource } from "../token-source.js";
 import type { Fit, ProtocolAdapter, ProtocolResponse } from "./protocol.js";
 import {
   applyEditsToDocument,
   invalidFitNameMessage,
+  mutateWithProvider,
+  providerInfo,
   unknownFitMessage,
 } from "./shared.js";
 
@@ -19,6 +22,8 @@ export interface TokenSourceAdapterOptions {
   source: TokenSource;
   /** Where Fits are stored, e.g. `<app root>/.fittingroom`. */
   fitsDir: string;
+  /** The detected Providers, CLI-first. Defaults to none. */
+  providers?: Provider[];
 }
 
 /**
@@ -29,7 +34,7 @@ export interface TokenSourceAdapterOptions {
 export function createTokenSourceAdapter(
   options: TokenSourceAdapterOptions,
 ): ProtocolAdapter {
-  const { source, fitsDir } = options;
+  const { source, fitsDir, providers = [] } = options;
   const fitPath = (name: string) => join(fitsDir, `${name}.json`);
 
   return {
@@ -102,6 +107,12 @@ export function createTokenSourceAdapter(
           rmSync(fitPath(request.name));
           return { type: "fit-deleted", name: request.name };
         }
+
+        case "list-providers":
+          return { type: "providers", providers: providers.map(providerInfo) };
+
+        case "mutate":
+          return mutateWithProvider(providers, source.read(), request);
       }
     },
   };

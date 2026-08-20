@@ -4,6 +4,7 @@ import type {
   Edits,
   Fit,
   ProtocolAdapter,
+  ProviderInfo,
   Token,
   TokenDocument,
 } from "@fittingroom/core";
@@ -146,6 +147,13 @@ export default function App({
   const [fits, setFits] = useState<Fit[]>([]);
   const [fitName, setFitName] = useState("");
   const [applying, setApplying] = useState(false);
+  const [providers, setProviders] = useState<ProviderInfo[]>([]);
+  const [providerId, setProviderId] = useState("");
+  const [prompt, setPrompt] = useState("");
+  // The active Mutation's edits: a follow-up prompt refines these
+  // rather than restarting from the source values.
+  const [mutation, setMutation] = useState<Edits | null>(null);
+  const [mutating, setMutating] = useState(false);
   const [importSnippet, setImportSnippet] = useState<string | null>(null);
   const [refusal, setRefusal] = useState<{ reason: string; diff: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -245,6 +253,15 @@ export default function App({
       }
       if (response.type === "error") setError(response.message);
     });
+    // Zero detected Providers — or a backend that cannot list them —
+    // leaves the mutation feature absent, never broken.
+    void adapter.handle({ type: "list-providers" }).then((response) => {
+      if (response.type === "providers") {
+        setProviders(response.providers);
+        // CLI-first default: the server lists Providers in detection order.
+        setProviderId(response.providers[0]?.id ?? "");
+      }
+    });
   }, [adapter]);
 
   useEffect(() => {
@@ -329,6 +346,8 @@ export default function App({
       setImportSnippet(
         committedFamilies.length > 0 ? fontImportSnippet(committedFamilies) : null,
       );
+      // A committed Mutation is no longer an unsaved Fit to refine.
+      setMutation(null);
       setRefusal(null);
       setError(null);
       const read = await adapter.handle({ type: "read" });
@@ -362,14 +381,43 @@ export default function App({
   };
 
   /**
-   * A Fit's edits become the draft state, replacing whatever was
-   * drafted: the preview effect pushes them, and committing them goes
-   * through the ordinary write path. Spacing-token edits land in the
-   * spacing editor's bases (at density ×1) so the spacing inputs show
-   * the applied values and later spacing edits compose with them;
-   * everything else becomes a generic draft. Edits typed while the
-   * request is in flight are newer than the Fit and stay on top of it.
+   * An arriving edit set — an applied Fit or a Mutation — becomes the
+   * draft state, replacing whatever was drafted: the preview effect
+   * pushes it, and committing it goes through the ordinary write path.
+   * Spacing-token edits land in the spacing editor's bases (at density
+   * ×1) so the spacing inputs show the applied values and later spacing
+   * edits compose with them; everything else becomes a generic draft.
+   * Edits typed while the request was in flight are newer than the
+   * arriving set and stay on top of it.
    */
+  const landEditSet = (
+    edits: Edits,
+    draftsAtStart: Drafts,
+    spacingAtStart: SpacingState,
+  ) => {
+    const applied: Drafts = {};
+    const appliedBases: Record<string, Edit> = {};
+    for (const [tokenName, edit] of Object.entries(edits)) {
+      const token = tokenByName(tokenName);
+      if (token && isSpacingToken(token)) {
+        appliedBases[tokenName] = edit;
+      } else {
+        applied[tokenName] = edit;
+      }
+    }
+    setDrafts((current) => ({
+      ...applied,
+      ...inFlightEntries(draftsAtStart, current),
+    }));
+    setSpacing((current) => ({
+      density: current.density === spacingAtStart.density ? 1 : current.density,
+      bases: {
+        ...appliedBases,
+        ...inFlightEntries(spacingAtStart.bases, current.bases),
+      },
+    }));
+  };
+
   const applyFit = async (name: string) => {
     const draftsAtClick = draftsRef.current;
     const spacingAtClick = spacingRef.current;
@@ -377,34 +425,44 @@ export default function App({
     try {
       const response = await adapter.handle({ type: "apply-fit", name });
       if (response.type === "fit-applied") {
-        const applied: Drafts = {};
-        const appliedBases: Record<string, Edit> = {};
-        for (const [tokenName, edit] of Object.entries(response.fit.edits)) {
-          const token = tokenByName(tokenName);
-          if (token && isSpacingToken(token)) {
-            appliedBases[tokenName] = edit;
-          } else {
-            applied[tokenName] = edit;
-          }
-        }
-        setDrafts((current) => ({
-          ...applied,
-          ...inFlightEntries(draftsAtClick, current),
-        }));
-        setSpacing((current) => ({
-          density:
-            current.density === spacingAtClick.density ? 1 : current.density,
-          bases: {
-            ...appliedBases,
-            ...inFlightEntries(spacingAtClick.bases, current.bases),
-          },
-        }));
+        landEditSet(response.fit.edits, draftsAtClick, spacingAtClick);
+        // The Fit replaced the draft state, so no Mutation is active.
+        setMutation(null);
         setError(null);
       } else if (response.type === "error") {
         setError(response.message);
       }
     } finally {
       setApplying(false);
+    }
+  };
+
+  /**
+   * Asks the picked Provider for a Mutation. The answer lands as an
+   * unsaved Fit applied to the Preview; while one is active, the next
+   * prompt carries its edits so "warmer" refines rather than restarts.
+   */
+  const requestMutation = async () => {
+    const draftsAtSubmit = draftsRef.current;
+    const spacingAtSubmit = spacingRef.current;
+    setMutating(true);
+    try {
+      const response = await adapter.handle({
+        type: "mutate",
+        providerId,
+        prompt: prompt.trim(),
+        ...(mutation !== null && { baseEdits: mutation }),
+      });
+      if (response.type === "mutation") {
+        setMutation(response.edits);
+        landEditSet(response.edits, draftsAtSubmit, spacingAtSubmit);
+        setPrompt("");
+        setError(null);
+      } else if (response.type === "error") {
+        setError(response.message);
+      }
+    } finally {
+      setMutating(false);
     }
   };
 
@@ -443,9 +501,9 @@ export default function App({
         <button
           type="button"
           className="lab-commit"
-          // A pending Apply is about to replace the draft state; a
-          // commit during it would write the pre-apply drafts.
-          disabled={draftCount === 0 || applying}
+          // A pending Apply or Mutation is about to replace the draft
+          // state; a commit during it would write the stale drafts.
+          disabled={draftCount === 0 || applying || mutating}
           onClick={() => void commit()}
         >
           Commit{draftCount > 0 ? ` ${draftCount} edit${draftCount > 1 ? "s" : ""}` : ""}
@@ -722,6 +780,52 @@ export default function App({
                     </li>
                   ))}
                 </ul>
+              )}
+            </section>
+          )}
+          {/* Zero Providers: the mutation feature is absent, not broken. */}
+          {tokenDocument && providers.length > 0 && (
+            <section className="lab-mutation" aria-label="Mutation">
+              <h2 className="lab-section-title">AI Mutation</h2>
+              {providers.length > 1 && (
+                <select
+                  aria-label="Mutation provider"
+                  value={providerId}
+                  onChange={(event) => setProviderId(event.target.value)}
+                >
+                  {providers.map((provider) => (
+                    <option key={provider.id} value={provider.id}>
+                      {provider.label}
+                    </option>
+                  ))}
+                </select>
+              )}
+              <div className="lab-fit-save">
+                <input
+                  type="text"
+                  aria-label="Mutation prompt"
+                  placeholder={
+                    mutation
+                      ? "Refine this mutation"
+                      : "Describe a look, e.g. 1970s ski lodge"
+                  }
+                  value={prompt}
+                  onChange={(event) => setPrompt(event.target.value)}
+                />
+                <button
+                  type="button"
+                  className="lab-mutate"
+                  disabled={prompt.trim() === "" || mutating || applying}
+                  onClick={() => void requestMutation()}
+                >
+                  {mutating ? "Mutating…" : mutation ? "Refine" : "Mutate"}
+                </button>
+              </div>
+              {mutation && (
+                <p className="lab-mutation-note">
+                  Mutation applied to the Preview as an unsaved Fit — commit to
+                  keep it, or prompt again to refine it.
+                </p>
               )}
             </section>
           )}

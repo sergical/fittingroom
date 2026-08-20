@@ -1,4 +1,10 @@
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AddressInfo } from "node:net";
@@ -162,6 +168,36 @@ describe("fittingroom dev server", () => {
       expect(body.type).toBe("error");
     }
     expect(readFileSync(packageJson, "utf8")).toBe("{}");
+  });
+
+  it("serves the Providers the developer's machine has", async () => {
+    // The dev server boots with PATH narrowed to a stub `claude` binary,
+    // so detection finds exactly one CLI Provider.
+    const binDir = mkdtempSync(join(tmpdir(), "fittingroom-bin-"));
+    const stub = join(binDir, "claude");
+    writeFileSync(stub, "#!/bin/sh\nexit 0\n");
+    chmodSync(stub, 0o755);
+    const realPath = process.env.PATH;
+    process.env.PATH = binDir;
+    try {
+      const app = await bootFixtureApp();
+      try {
+        const response = await fetch(`${app.baseUrl}/__fittingroom/api`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ type: "list-providers" }),
+        });
+        const body = (await response.json()) as ProtocolResponse;
+        expect(body).toEqual({
+          type: "providers",
+          providers: [{ id: "claude", label: "Claude CLI", kind: "cli" }],
+        });
+      } finally {
+        await app.server.close();
+      }
+    } finally {
+      process.env.PATH = realPath;
+    }
   });
 
   it("injects the preview client into the host app's pages", async () => {

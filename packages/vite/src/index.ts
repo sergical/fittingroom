@@ -6,6 +6,7 @@ import type { Connect, Plugin } from "vite";
 import {
   createTokenSource,
   createTokenSourceAdapter,
+  detectProviders,
   parseProtocolRequest,
   type ProtocolAdapter,
   type ProtocolResponse,
@@ -311,6 +312,10 @@ export default function fittingroom(options: FittingroomOptions = {}): Plugin {
         ? createTokenSourceAdapter({
             source: createTokenSource(cssFile),
             fitsDir: join(root, ".fittingroom"),
+            // AI Mutations come from whatever the developer's machine
+            // already has: installed CLIs first, API key as fallback.
+            // Zero hits leaves the lab's mutation UI absent.
+            providers: detectProviders(),
           })
         : null;
       const uiDist = resolveUiDist();

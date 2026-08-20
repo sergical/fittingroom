@@ -1,8 +1,11 @@
 import type { TokenDocument } from "../model/types.js";
+import type { Provider } from "../provider/provider.js";
 import type { Fit, ProtocolAdapter, ProtocolResponse } from "./protocol.js";
 import {
   applyEditsToDocument,
   invalidFitNameMessage,
+  mutateWithProvider,
+  providerInfo,
   unknownFitMessage,
 } from "./shared.js";
 
@@ -11,6 +14,8 @@ export interface FakeAdapterOptions {
   document?: TokenDocument;
   /** When set, every commit is refused with exactly this reason and diff. */
   refusal?: { reason: string; diff: string };
+  /** The Providers the adapter serves mutations from. Defaults to none. */
+  providers?: Provider[];
 }
 
 // Mirrors a subset of the shadcn-globals.css test fixture, so the fake
@@ -44,6 +49,7 @@ export function createFakeAdapter(
 ): ProtocolAdapter {
   let document = structuredClone(options.document ?? sampleDocument);
   const fits = new Map<string, Fit>();
+  const providers = options.providers ?? [];
 
   return {
     async handle(request): Promise<ProtocolResponse> {
@@ -99,6 +105,12 @@ export function createFakeAdapter(
           }
           return { type: "fit-deleted", name: request.name };
         }
+
+        case "list-providers":
+          return { type: "providers", providers: providers.map(providerInfo) };
+
+        case "mutate":
+          return mutateWithProvider(providers, document, request);
       }
     },
   };

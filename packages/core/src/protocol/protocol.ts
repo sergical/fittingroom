@@ -1,4 +1,6 @@
 import type { Edits, TokenDocument } from "../model/types.js";
+import type { ProviderInfo } from "../provider/provider.js";
+import { isEdits } from "./shared.js";
 
 /**
  * A saved, named set of edits: a draft state you can preview, compare,
@@ -24,6 +26,12 @@ export interface Fit {
  * - `save-fit` / `list-fits` / `apply-fit` / `delete-fit` — Fit
  *   lifecycle. `apply-fit` returns the named Fit; the client previews
  *   its edits.
+ * - `list-providers` — the detected Providers, CLI-first. An empty list
+ *   means the mutation feature is absent, not broken.
+ * - `mutate` — ask the named Provider for a Mutation. `baseEdits` is
+ *   the active Mutation on a follow-up, so the prompt refines it. The
+ *   answer's edits arrive as an unsaved Fit: the client previews them
+ *   and commits through the ordinary write gate.
  */
 export type ProtocolRequest =
   | { type: "read" }
@@ -32,7 +40,9 @@ export type ProtocolRequest =
   | { type: "save-fit"; name: string; edits: Edits }
   | { type: "list-fits" }
   | { type: "apply-fit"; name: string }
-  | { type: "delete-fit"; name: string };
+  | { type: "delete-fit"; name: string }
+  | { type: "list-providers" }
+  | { type: "mutate"; providerId: string; prompt: string; baseEdits?: Edits };
 
 /**
  * One response per request, plus `error` for a request that names an
@@ -48,6 +58,8 @@ export type ProtocolResponse =
   | { type: "fits"; fits: Fit[] }
   | { type: "fit-applied"; fit: Fit }
   | { type: "fit-deleted"; name: string }
+  | { type: "providers"; providers: ProviderInfo[] }
+  | { type: "mutation"; edits: Edits }
   | { type: "error"; message: string };
 
 /**
@@ -70,7 +82,22 @@ export function parseProtocolRequest(value: unknown): ProtocolRequest | null {
   switch (request.type) {
     case "read":
     case "list-fits":
+    case "list-providers":
       return { type: request.type };
+    case "mutate":
+      if (
+        typeof request.providerId !== "string" ||
+        typeof request.prompt !== "string" ||
+        (request.baseEdits !== undefined && !isEdits(request.baseEdits))
+      ) {
+        return null;
+      }
+      return {
+        type: request.type,
+        providerId: request.providerId,
+        prompt: request.prompt,
+        ...(request.baseEdits !== undefined && { baseEdits: request.baseEdits }),
+      };
     case "preview":
     case "commit":
       if (!isEdits(request.edits)) return null;
@@ -85,24 +112,4 @@ export function parseProtocolRequest(value: unknown): ProtocolRequest | null {
     default:
       return null;
   }
-}
-
-function isEdits(value: unknown): value is Edits {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return false;
-  }
-  return Object.values(value).every(
-    (edit) =>
-      typeof edit === "string" ||
-      (typeof edit === "object" &&
-        edit !== null &&
-        !Array.isArray(edit) &&
-        halfIsAbsentOrString(edit, "light") &&
-        halfIsAbsentOrString(edit, "dark")),
-  );
-}
-
-function halfIsAbsentOrString(edit: object, half: "light" | "dark"): boolean {
-  const value = (edit as Record<string, unknown>)[half];
-  return value === undefined || typeof value === "string";
 }

@@ -6,8 +6,14 @@ import {
   createFakeAdapter,
   createTokenSourceAdapter,
   createTokenSource,
+  parseProtocolRequest,
 } from "../src/index.js";
-import type { ProtocolAdapter, ProtocolResponse } from "../src/index.js";
+import type {
+  MutationRequest,
+  Provider,
+  ProtocolAdapter,
+  ProtocolResponse,
+} from "../src/index.js";
 import { tempFile } from "./helpers.js";
 
 const shadcnGlobals = readFileSync(
@@ -27,24 +33,25 @@ const unparseableCss = ":root {\n  --primary: red;\n}\n.dark {\n  --primary: blu
  */
 interface Harness {
   adapter: string;
-  make(): ProtocolAdapter;
+  make(providers?: Provider[]): ProtocolAdapter;
   /** An adapter whose commits are always refused. */
   makeRefusing(): ProtocolAdapter;
 }
 
 /** Creates the real adapter over a temp fixture app (CSS file + fits dir). */
-function makeReal(css: string): ProtocolAdapter {
+function makeReal(css: string, providers?: Provider[]): ProtocolAdapter {
   const cssPath = tempFile(css);
   return createTokenSourceAdapter({
     source: createTokenSource(cssPath),
     fitsDir: join(dirname(cssPath), ".fittingroom"),
+    providers,
   });
 }
 
 const harnesses: Harness[] = [
   {
     adapter: "fake",
-    make: () => createFakeAdapter(),
+    make: (providers) => createFakeAdapter({ providers }),
     makeRefusing: () =>
       createFakeAdapter({
         refusal: { reason: "simulated refusal", diff: "--- a\n+++ b\n" },
@@ -52,10 +59,29 @@ const harnesses: Harness[] = [
   },
   {
     adapter: "token-source",
-    make: () => makeReal(shadcnGlobals),
+    make: (providers) => makeReal(shadcnGlobals, providers),
     makeRefusing: () => makeReal(unparseableCss),
   },
 ];
+
+/** A Provider that answers with canned edits and records what it was asked. */
+function fakeProvider(
+  id: string,
+  kind: "cli" | "api",
+  edits: Record<string, string | { light?: string; dark?: string }>,
+): Provider & { requests: MutationRequest[] } {
+  const requests: MutationRequest[] = [];
+  return {
+    id,
+    label: `Fake ${id}`,
+    kind,
+    requests,
+    async mutate(request) {
+      requests.push(request);
+      return edits;
+    },
+  };
+}
 
 function tokenValue(response: ProtocolResponse, name: string) {
   if (response.type !== "document" && response.type !== "previewed") {
@@ -204,6 +230,123 @@ describe.each(harnesses)("$adapter adapter protocol conformance", (h) => {
       type: "fits",
       fits: [],
     });
+  });
+
+  it("list-providers answers with identities only, in detection order", async () => {
+    const providers = [
+      fakeProvider("claude", "cli", {}),
+      fakeProvider("openrouter", "api", {}),
+    ];
+    const response = await h.make(providers).handle({ type: "list-providers" });
+
+    expect(response).toEqual({
+      type: "providers",
+      providers: [
+        { id: "claude", label: "Fake claude", kind: "cli" },
+        { id: "openrouter", label: "Fake openrouter", kind: "api" },
+      ],
+    });
+  });
+
+  it("zero Providers list as empty — the feature is absent, not broken", async () => {
+    expect(await h.make().handle({ type: "list-providers" })).toEqual({
+      type: "providers",
+      providers: [],
+    });
+  });
+
+  it("mutate hands the Provider the prompt, document, and refined edits", async () => {
+    const provider = fakeProvider("claude", "cli", {
+      "--primary": { light: "oklch(0.7 0.1 40)" },
+      "--imaginary": "red",
+    });
+    const response = await h.make([provider]).handle({
+      type: "mutate",
+      providerId: "claude",
+      prompt: "warmer",
+      baseEdits: { "--primary": "blue" },
+    });
+
+    // Edits to tokens the document does not hold are dropped.
+    expect(response).toEqual({
+      type: "mutation",
+      edits: { "--primary": { light: "oklch(0.7 0.1 40)" } },
+    });
+    expect(provider.requests).toHaveLength(1);
+    expect(provider.requests[0].prompt).toBe("warmer");
+    expect(provider.requests[0].baseEdits).toEqual({ "--primary": "blue" });
+    expect(
+      provider.requests[0].document.tokens.map((token) => token.name),
+    ).toContain("--primary");
+  });
+
+  it("mutate naming an unknown Provider is an error naming it", async () => {
+    const response = await h
+      .make([fakeProvider("claude", "cli", {})])
+      .handle({ type: "mutate", providerId: "ghost", prompt: "x" });
+
+    expect(response.type).toBe("error");
+    if (response.type === "error") {
+      expect(response.message).toContain("ghost");
+    }
+  });
+
+  it("a Provider failure travels back as a Protocol error", async () => {
+    const provider: Provider = {
+      id: "claude",
+      label: "Claude CLI",
+      kind: "cli",
+      mutate: async () => {
+        throw new Error("the CLI exited 1");
+      },
+    };
+    const response = await h
+      .make([provider])
+      .handle({ type: "mutate", providerId: "claude", prompt: "x" });
+
+    expect(response).toEqual({
+      type: "error",
+      message: "Claude CLI failed to mutate: the CLI exited 1",
+    });
+  });
+});
+
+describe("parseProtocolRequest", () => {
+  it("accepts the mutation messages", () => {
+    expect(parseProtocolRequest({ type: "list-providers" })).toEqual({
+      type: "list-providers",
+    });
+    expect(
+      parseProtocolRequest({ type: "mutate", providerId: "claude", prompt: "x" }),
+    ).toEqual({ type: "mutate", providerId: "claude", prompt: "x" });
+    expect(
+      parseProtocolRequest({
+        type: "mutate",
+        providerId: "claude",
+        prompt: "x",
+        baseEdits: { "--primary": { dark: "black" } },
+      }),
+    ).toEqual({
+      type: "mutate",
+      providerId: "claude",
+      prompt: "x",
+      baseEdits: { "--primary": { dark: "black" } },
+    });
+  });
+
+  it("rejects malformed mutation messages", () => {
+    expect(parseProtocolRequest({ type: "mutate", prompt: "x" })).toBeNull();
+    expect(
+      parseProtocolRequest({ type: "mutate", providerId: "claude" }),
+    ).toBeNull();
+    expect(
+      parseProtocolRequest({
+        type: "mutate",
+        providerId: "claude",
+        prompt: "x",
+        baseEdits: { "--primary": 3 },
+      }),
+    ).toBeNull();
   });
 });
 
