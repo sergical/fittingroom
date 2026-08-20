@@ -1,7 +1,8 @@
 // The end-to-end loops: open the room, edit (a color, then spacing via
-// the density multiplier, then a shadow via presets and sliders),
-// observe the live Preview change, commit, assert the file diff. They
-// prove composition, not behaviors — those are tested at the seams.
+// the density multiplier, then a shadow via presets and sliders, then
+// a color's dark half behind the scheme toggle), observe the live
+// Preview change, commit, assert the file diff. They prove
+// composition, not behaviors — those are tested at the seams.
 import { cpSync, mkdtempSync, readFileSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -49,22 +50,28 @@ afterAll(async () => {
 
 /**
  * The preview client applies drafts through its own injected stylesheet,
- * leaving inline styles and files untouched.
+ * leaving inline styles and files untouched. Rule 0 holds the
+ * light-scheme overrides, rule 1 the dark-scheme ones.
  */
-const previewVar = (name: string) => {
+const previewRuleVar = (index: number, name: string) => {
   const frame = page.frames().find((f) => f !== page.mainFrame());
   return frame
-    ? frame.evaluate((property) => {
-        const sheet = document.getElementById(
-          "fittingroom-preview",
-        ) as HTMLStyleElement | null;
-        const rule = sheet?.sheet?.cssRules[0];
-        return rule instanceof CSSStyleRule
-          ? rule.style.getPropertyValue(property)
-          : "";
-      }, name)
+    ? frame.evaluate(
+        ([ruleIndex, property]) => {
+          const sheet = document.getElementById(
+            "fittingroom-preview",
+          ) as HTMLStyleElement | null;
+          const rule = sheet?.sheet?.cssRules[ruleIndex as number];
+          return rule instanceof CSSStyleRule
+            ? rule.style.getPropertyValue(property as string)
+            : "";
+        },
+        [index, name] as const,
+      )
     : "";
 };
+
+const previewVar = (name: string) => previewRuleVar(0, name);
 
 it("opens, edits, previews, reloads, commits, and changes the file", async () => {
   const cssPath = join(root, "src", "styles.css");
@@ -234,4 +241,46 @@ it("auditions a Google Font, commits only the value, and hands over the import",
     .poll(() => handover.locator("button", { hasText: "Copy" }).isVisible())
     .toBe(true);
   await expect.poll(() => previewVar("--font-sans")).toBe("");
+});
+
+// The dark-mode loop from issue #9: edit what you see. The Preview's
+// scheme toggle flips the iframe into dark mode, the editors show the
+// dark halves, and an edit targets only the previewed scheme's half.
+it("toggles the previewed scheme and edits the dark half independently", async () => {
+  const cssPath = join(root, "src", "styles.css");
+  const originalCss = readFileSync(cssPath, "utf8");
+  const toggle = page.locator('button[aria-label="Preview color scheme"]');
+  const primaryValue = page.locator('input[aria-label="--primary value"]');
+  const iframeIsDark = () => {
+    const frame = page.frames().find((f) => f !== page.mainFrame());
+    return frame
+      ? frame.evaluate(() => document.documentElement.classList.contains("dark"))
+      : false;
+  };
+
+  // Toggle: the Preview enters dark mode and the editor shows the dark half.
+  await toggle.click();
+  await expect.poll(iframeIsDark).toBe(true);
+  await expect.poll(() => primaryValue.inputValue()).toBe("#818cf8");
+
+  // Edit: only the dark override rule changes, and no file is written.
+  await primaryValue.fill("#00ff00");
+  await expect.poll(() => previewRuleVar(1, "--primary")).toBe("#00ff00");
+  await expect.poll(() => previewVar("--primary")).toBe("");
+  expect(readFileSync(cssPath, "utf8")).toBe(originalCss);
+
+  // Toggle back: the light half is untouched by the dark edit.
+  await toggle.click();
+  await expect.poll(iframeIsDark).toBe(false);
+  await expect.poll(() => primaryValue.inputValue()).toBe("#ff0000");
+  await toggle.click();
+  await expect.poll(() => primaryValue.inputValue()).toBe("#00ff00");
+
+  // Commit: only the .dark declaration changes in the file.
+  await page.locator("button.lab-commit").click();
+  await expect
+    .poll(() => readFileSync(cssPath, "utf8"))
+    .toBe(originalCss.replace("--primary: #818cf8;", "--primary: #00ff00;"));
+  await expect.poll(() => primaryValue.inputValue()).toBe("#00ff00");
+  await expect.poll(() => previewRuleVar(1, "--primary")).toBe("");
 });

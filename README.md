@@ -9,6 +9,11 @@ It understands the shadcn/Tailwind v4 `@theme`/`:root` dialect and the
 emdash `@layer base`/`light-dark()` dialect, parsing both into a
 DTCG-shaped token model.
 
+Editing is edit-what-you-see: a color-scheme toggle above the Preview
+flips your app into dark mode, and an edit targets the half of a
+light/dark pair you are previewing — light and dark are edited
+independently through one flow.
+
 Works with any Vite-based framework (Vite, Astro, TanStack Start,
 SvelteKit); Next.js support is planned later.
 

@@ -1,12 +1,18 @@
 import { useEffect, useRef, useState } from "react";
-import type { Edits, Token, TokenDocument } from "@fittingroom/core";
+import type { Edit, Edits, Token, TokenDocument } from "@fittingroom/core";
 import { sendProtocolRequest } from "./protocol-client.js";
+import {
+  draftedValue,
+  previewBuckets,
+  schemeValue,
+  withDraft,
+  type Scheme,
+} from "./scheme.js";
 import {
   baseValue,
   isSpacingToken,
   scaleLength,
   spacingEdits,
-  type SpacingEdit,
 } from "./spacing.js";
 import {
   composeShadowLayers,
@@ -51,7 +57,7 @@ function isColorValue(value: string): boolean {
   );
 }
 
-type Drafts = Record<string, string>;
+type Drafts = Record<string, Edit>;
 
 /**
  * The spacing editor's state: the headline density multiplier over all
@@ -97,6 +103,7 @@ export default function App() {
   const [tokenDocument, setTokenDocument] = useState<TokenDocument | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [drafts, setDrafts] = useState<Drafts>(loadDrafts);
+  const [scheme, setScheme] = useState<Scheme>("light");
   const [spacing, setSpacing] = useState<SpacingState>(loadSpacing);
   const [shadowTab, setShadowTab] = useState<"presets" | "sliders">("presets");
   const [importSnippet, setImportSnippet] = useState<string | null>(null);
@@ -106,6 +113,8 @@ export default function App() {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const draftsRef = useRef(drafts);
   draftsRef.current = drafts;
+  const schemeRef = useRef(scheme);
+  schemeRef.current = scheme;
   const spacingRef = useRef(spacing);
   spacingRef.current = spacing;
   const documentRef = useRef(tokenDocument);
@@ -114,30 +123,12 @@ export default function App() {
   const tokenByName = (name: string): Token | undefined =>
     documentRef.current?.tokens.find((token) => token.name === name);
 
-  /** The light half of a draft, whether it is a bare value or a paired edit. */
-  const lightValue = (draft: SpacingEdit): string =>
-    typeof draft === "string" ? draft : draft.light;
-
-  /**
-   * A draft edits the light half of a token, so a paired emdash token
-   * must preview as `light-dark(draft, dark)` — a bare value would also
-   * override the dark half, showing a state a commit never produces.
-   */
-  const previewValue = (token: Token | undefined, draft: SpacingEdit): string => {
-    const light = lightValue(draft);
-    if (
-      documentRef.current?.dialect === "emdash" &&
-      token?.value.raw === undefined &&
-      token?.value.dark !== undefined
-    ) {
-      const dark = typeof draft === "string" ? token.value.dark : draft.dark;
-      return `light-dark(${light}, ${dark})`;
-    }
-    return light;
-  };
+  /** The value an editor row shows: the previewed scheme's half. */
+  const shownValue = (token: Token): string =>
+    draftedValue(drafts[token.name], token, scheme) ?? schemeValue(token, scheme);
 
   /** Drafts plus the spacing editor's computed values, as one edit set. */
-  const mergedDrafts = (): Record<string, SpacingEdit> => ({
+  const mergedDrafts = (): Record<string, Edit> => ({
     ...spacingEdits(
       documentRef.current?.tokens ?? [],
       spacingRef.current.density,
@@ -148,35 +139,38 @@ export default function App() {
 
   /**
    * The Google families an edit set auditions: the primary family of
-   * every font-token edit that names a font from the curated list.
-   * Hand-typed families stay out — there is nothing to load for them.
+   * every font-token edit half that names a font from the curated list.
+   * Both halves load, so toggling the previewed scheme auditions
+   * instantly. Hand-typed families stay out — there is nothing to load
+   * for them.
    */
-  const googleFamilies = (edits: Record<string, SpacingEdit>): string[] => {
+  const googleFamilies = (edits: Record<string, Edit>): string[] => {
     const families = Object.entries(edits)
       .filter(([name]) => {
         const token = tokenByName(name);
         return token !== undefined && isFontToken(token);
       })
-      .map(([, draft]) => primaryFamily(lightValue(draft)))
+      .flatMap(([, draft]) =>
+        typeof draft === "string" ? [draft] : [draft.light, draft.dark],
+      )
+      .filter((value): value is string => value !== undefined)
+      .map(primaryFamily)
       .filter((family) => googleFontByFamily(family) !== undefined);
     return [...new Set(families)];
   };
 
   const pushPreview = () => {
     const merged = mergedDrafts();
-    const edits = Object.fromEntries(
-      Object.entries(merged).map(([name, draft]) => [
-        name,
-        previewValue(tokenByName(name), draft),
-      ]),
-    );
+    const buckets = previewBuckets(documentRef.current, merged);
     // The candidate font must render in place, so the preview client
     // loads its stylesheet inside the iframe alongside the overrides.
     const families = googleFamilies(merged);
     iframeRef.current?.contentWindow?.postMessage(
       {
         type: "fittingroom:preview",
-        edits,
+        edits: buckets.light,
+        darkEdits: buckets.dark,
+        scheme: schemeRef.current,
         fonts: families.length > 0 ? [googleFontsUrl(families)] : [],
       },
       window.location.origin,
@@ -195,16 +189,11 @@ export default function App() {
     localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(drafts));
     localStorage.setItem(SPACING_STORAGE_KEY, JSON.stringify(spacing));
     pushPreview();
-  }, [drafts, spacing, tokenDocument]);
+  }, [drafts, spacing, scheme, tokenDocument]);
 
+  /** Edit what you see: a change targets the previewed scheme's half. */
   const setDraft = (token: Token, value: string) => {
-    setDrafts((previous) => {
-      if (value === baseValue(token)) {
-        const { [token.name]: _dropped, ...rest } = previous;
-        return rest;
-      }
-      return { ...previous, [token.name]: value };
-    });
+    setDrafts((previous) => withDraft(previous, token, schemeRef.current, value));
   };
 
   const setSpacingBase = (token: Token, value: string) => {
@@ -218,11 +207,12 @@ export default function App() {
   };
 
   /**
-   * A draft is a light-half edit, so a paired token gets an object edit
-   * — a bare string would tell the emdash writer to replace the whole
-   * `light-dark()` value and silently drop the dark half.
+   * A bare-string draft on a non-raw token is a light-half edit, so it
+   * commits as an object edit — a bare string would tell the emdash
+   * writer to replace the whole `light-dark()` value and silently drop
+   * the dark half.
    */
-  const toEdits = (drafts: Record<string, SpacingEdit>): Edits =>
+  const toEdits = (drafts: Record<string, Edit>): Edits =>
     Object.fromEntries(
       Object.entries(drafts).map(([name, draft]) => {
         if (typeof draft !== "string") return [name, draft];
@@ -356,7 +346,7 @@ export default function App() {
             <h2 className="lab-section-title">Colors</h2>
           )}
           {colorTokens.map((token) => {
-            const current = drafts[token.name] ?? baseValue(token);
+            const current = shownValue(token);
             return (
               <div className="lab-token" key={token.name}>
                 <span className="lab-token-name">{token.name}</span>
@@ -379,7 +369,7 @@ export default function App() {
             <>
               <h2 className="lab-section-title">Fonts</h2>
               {fontTokens.map((token) => {
-                const current = drafts[token.name] ?? baseValue(token);
+                const current = shownValue(token);
                 const picked = googleFontByFamily(primaryFamily(current));
                 return (
                   <div className="lab-token" key={token.name}>
@@ -497,7 +487,7 @@ export default function App() {
                 ))}
               </div>
               {shadowTokens.map((token) => {
-                const current = drafts[token.name] ?? baseValue(token);
+                const current = shownValue(token);
                 return (
                   <div className="lab-shadow" key={token.name}>
                     <div className="lab-token">
@@ -506,8 +496,11 @@ export default function App() {
                         type="button"
                         className="lab-reset"
                         aria-label={`Reset ${token.name}`}
-                        disabled={drafts[token.name] === undefined}
-                        onClick={() => setDraft(token, baseValue(token))}
+                        disabled={
+                          draftedValue(drafts[token.name], token, scheme) ===
+                          undefined
+                        }
+                        onClick={() => setDraft(token, schemeValue(token, scheme))}
                       >
                         Reset
                       </button>
@@ -541,6 +534,21 @@ export default function App() {
         </section>
 
         <section className="lab-preview" aria-label="Preview">
+          <div className="lab-preview-bar">
+            {/* Edit what you see: the toggle decides which half of a
+                light/dark pair the editors show and an edit targets. */}
+            <button
+              type="button"
+              className="lab-scheme-toggle"
+              aria-label="Preview color scheme"
+              aria-pressed={scheme === "dark"}
+              onClick={() =>
+                setScheme((previous) => (previous === "light" ? "dark" : "light"))
+              }
+            >
+              {scheme === "dark" ? "Dark" : "Light"}
+            </button>
+          </div>
           <iframe ref={iframeRef} title="Preview" src="/" onLoad={pushPreview} />
         </section>
       </div>

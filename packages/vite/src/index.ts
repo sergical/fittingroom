@@ -28,11 +28,18 @@ export interface FittingroomOptions {
  * injected stylesheet — never touching files or the host's own inline
  * styles, so losing or clearing a preview is always harmless.
  *
- * The rule's selector is \`:root:not(.dark)\`: a preview edit changes
- * a token's light value (exactly what a commit writes), so it must not
- * override class-based dark values — in dark mode the page keeps
- * showing what the file's \`.dark\` rule declares, matching what a
- * commit would leave behind.
+ * The stylesheet holds two rules, one per color scheme:
+ * \`:root:not(.dark)\` takes the light-scheme overrides (\`edits\`) and
+ * \`:root.dark\` the dark-scheme ones (\`darkEdits\`), so a light-half
+ * edit never overrides class-based dark values or vice versa — each
+ * scheme keeps showing exactly what a commit would leave behind. Each
+ * rule also pins its own \`color-scheme\`, which resolves the host's
+ * \`light-dark()\` values for the previewed scheme.
+ *
+ * A message's \`scheme\` ("light" | "dark") is the lab's Preview
+ * toggle: the client sets the \`.dark\` class on the root element so
+ * the developer edits what they see, whatever the host or the OS would
+ * have picked on their own.
  *
  * A message may also carry \`fonts\`: Google Fonts stylesheet URLs the
  * lab wants loaded so a candidate font auditions in place. Only
@@ -40,8 +47,7 @@ export interface FittingroomOptions {
  * become a way to load arbitrary stylesheets into the host app.
  */
 const PREVIEW_CLIENT = `(() => {
-  let rule = null;
-  const applied = new Set();
+  let rules = null;
   const fontLinks = new Map();
   const applyFonts = (fonts) => {
     const wanted = (Array.isArray(fonts) ? fonts : []).filter(
@@ -63,32 +69,44 @@ const PREVIEW_CLIENT = `(() => {
       }
     }
   };
-  const previewRule = () => {
-    if (rule) return rule;
+  const previewRules = () => {
+    if (rules) return rules;
     const sheet = document.createElement("style");
     sheet.id = "fittingroom-preview";
     document.head.append(sheet);
-    const index = sheet.sheet.insertRule(":root:not(.dark) {}");
-    rule = sheet.sheet.cssRules[index];
-    return rule;
+    const insert = (selector, scheme, index) => {
+      sheet.sheet.insertRule(selector + " { color-scheme: " + scheme + " }", index);
+      return { rule: sheet.sheet.cssRules[index], applied: new Set() };
+    };
+    return (rules = {
+      light: insert(":root:not(.dark)", "light", 0),
+      dark: insert(":root.dark", "dark", 1),
+    });
+  };
+  const applyEdits = ({ rule, applied }, edits) => {
+    for (const name of [...applied]) {
+      if (!(name in edits)) {
+        rule.style.removeProperty(name);
+        applied.delete(name);
+      }
+    }
+    for (const [name, value] of Object.entries(edits)) {
+      if (name.startsWith("--") && typeof value === "string") {
+        rule.style.setProperty(name, value);
+        applied.add(name);
+      }
+    }
   };
   window.addEventListener("message", (event) => {
     if (event.origin !== window.location.origin) return;
     const data = event.data;
     if (!data || data.type !== "fittingroom:preview" || typeof data.edits !== "object" || data.edits === null) return;
     applyFonts(data.fonts);
-    const style = previewRule().style;
-    for (const name of [...applied]) {
-      if (!(name in data.edits)) {
-        style.removeProperty(name);
-        applied.delete(name);
-      }
-    }
-    for (const [name, value] of Object.entries(data.edits)) {
-      if (name.startsWith("--") && typeof value === "string") {
-        style.setProperty(name, value);
-        applied.add(name);
-      }
+    const { light, dark } = previewRules();
+    applyEdits(light, data.edits);
+    applyEdits(dark, typeof data.darkEdits === "object" && data.darkEdits !== null ? data.darkEdits : {});
+    if (data.scheme === "light" || data.scheme === "dark") {
+      document.documentElement.classList.toggle("dark", data.scheme === "dark");
     }
   });
 })();
