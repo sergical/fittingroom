@@ -81,6 +81,20 @@ interface SpacingState {
 
 const NO_SPACING: SpacingState = { density: 1, bases: {} };
 
+/**
+ * The entries of `current` that were added or changed since `before`:
+ * the edits a user typed while an adapter request was in flight, which
+ * are newer than the response and must survive it.
+ */
+function inFlightEntries(
+  before: Record<string, Edit>,
+  current: Record<string, Edit>,
+): Record<string, Edit> {
+  return Object.fromEntries(
+    Object.entries(current).filter(([name, edit]) => before[name] !== edit),
+  );
+}
+
 function loadDrafts(): Drafts {
   try {
     return JSON.parse(localStorage.getItem(DRAFT_STORAGE_KEY) ?? "{}") as Drafts;
@@ -127,6 +141,7 @@ export default function App({
   const [shadowTab, setShadowTab] = useState<"presets" | "sliders">("presets");
   const [fits, setFits] = useState<Fit[]>([]);
   const [fitName, setFitName] = useState("");
+  const [applying, setApplying] = useState(false);
   const [importSnippet, setImportSnippet] = useState<string | null>(null);
   const [refusal, setRefusal] = useState<{ reason: string; diff: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -140,6 +155,15 @@ export default function App({
   spacingRef.current = spacing;
   const documentRef = useRef(tokenDocument);
   documentRef.current = tokenDocument;
+  // Every completed save/delete records its transform so the initial
+  // list-fits response — which may resolve after them — can replay the
+  // newer mutations instead of overwriting them with a stale list.
+  const fitMutationsRef = useRef<Array<(fits: Fit[]) => Fit[]>>([]);
+
+  const mutateFits = (transform: (fits: Fit[]) => Fit[]) => {
+    fitMutationsRef.current.push(transform);
+    setFits(transform);
+  };
 
   const tokenByName = (name: string): Token | undefined =>
     documentRef.current?.tokens.find((token) => token.name === name);
@@ -207,7 +231,15 @@ export default function App({
     // Fits saved in earlier sessions (or by teammates, via git) list
     // alongside the tokens from the start.
     void adapter.handle({ type: "list-fits" }).then((response) => {
-      if (response.type === "fits") setFits(response.fits);
+      if (response.type === "fits") {
+        setFits(
+          fitMutationsRef.current.reduce(
+            (fits, transform) => transform(fits),
+            response.fits,
+          ),
+        );
+      }
+      if (response.type === "error") setError(response.message);
     });
   }, [adapter]);
 
@@ -312,7 +344,7 @@ export default function App({
       edits: toEdits(mergedDrafts()),
     });
     if (response.type === "fit-saved") {
-      setFits((previous) =>
+      mutateFits((previous) =>
         [
           ...previous.filter((fit) => fit.name !== response.fit.name),
           response.fit,
@@ -326,26 +358,56 @@ export default function App({
   };
 
   /**
-   * A Fit's edits become the draft set, replacing whatever was drafted:
-   * the preview effect pushes them, and committing them goes through
-   * the ordinary write path. Spacing state resets because the Fit's
-   * stored edits already carry any computed spacing values.
+   * A Fit's edits become the draft state, replacing whatever was
+   * drafted: the preview effect pushes them, and committing them goes
+   * through the ordinary write path. Spacing-token edits land in the
+   * spacing editor's bases (at density ×1) so the spacing inputs show
+   * the applied values and later spacing edits compose with them;
+   * everything else becomes a generic draft. Edits typed while the
+   * request is in flight are newer than the Fit and stay on top of it.
    */
   const applyFit = async (name: string) => {
-    const response = await adapter.handle({ type: "apply-fit", name });
-    if (response.type === "fit-applied") {
-      setDrafts(response.fit.edits);
-      setSpacing(NO_SPACING);
-      setError(null);
-    } else if (response.type === "error") {
-      setError(response.message);
+    const draftsAtClick = draftsRef.current;
+    const spacingAtClick = spacingRef.current;
+    setApplying(true);
+    try {
+      const response = await adapter.handle({ type: "apply-fit", name });
+      if (response.type === "fit-applied") {
+        const applied: Drafts = {};
+        const appliedBases: Record<string, Edit> = {};
+        for (const [tokenName, edit] of Object.entries(response.fit.edits)) {
+          const token = tokenByName(tokenName);
+          if (token && isSpacingToken(token)) {
+            appliedBases[tokenName] = edit;
+          } else {
+            applied[tokenName] = edit;
+          }
+        }
+        setDrafts((current) => ({
+          ...applied,
+          ...inFlightEntries(draftsAtClick, current),
+        }));
+        setSpacing((current) => ({
+          density:
+            current.density === spacingAtClick.density ? 1 : current.density,
+          bases: {
+            ...appliedBases,
+            ...inFlightEntries(spacingAtClick.bases, current.bases),
+          },
+        }));
+        setError(null);
+      } else if (response.type === "error") {
+        setError(response.message);
+      }
+    } finally {
+      setApplying(false);
     }
   };
 
   const deleteFit = async (name: string) => {
     const response = await adapter.handle({ type: "delete-fit", name });
     if (response.type === "fit-deleted") {
-      setFits((previous) => previous.filter((fit) => fit.name !== response.name));
+      mutateFits((previous) => previous.filter((fit) => fit.name !== response.name));
       setError(null);
     } else if (response.type === "error") {
       setError(response.message);
@@ -377,7 +439,9 @@ export default function App({
         <button
           type="button"
           className="lab-commit"
-          disabled={draftCount === 0}
+          // A pending Apply is about to replace the draft state; a
+          // commit during it would write the pre-apply drafts.
+          disabled={draftCount === 0 || applying}
           onClick={() => void commit()}
         >
           Commit{draftCount > 0 ? ` ${draftCount} edit${draftCount > 1 ? "s" : ""}` : ""}
@@ -622,7 +686,7 @@ export default function App({
                 <button
                   type="button"
                   className="lab-save-fit"
-                  disabled={draftCount === 0 || fitName.trim() === ""}
+                  disabled={draftCount === 0 || fitName.trim() === "" || applying}
                   onClick={() => void saveFit()}
                 >
                   Save Fit
@@ -638,6 +702,7 @@ export default function App({
                       <button
                         type="button"
                         aria-label={`Apply ${fit.name}`}
+                        disabled={applying}
                         onClick={() => void applyFit(fit.name)}
                       >
                         Apply
