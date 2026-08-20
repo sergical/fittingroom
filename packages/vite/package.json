@@ -25,7 +25,7 @@
   ],
   "scripts": {
     "build": "tsdown && node scripts/copy-ui.mjs",
-    "test": "vitest run"
+    "test": "tsc -p tsconfig.typecheck.json && vitest run"
   },
   "dependencies": {
     "@fittingroom/core": "workspace:*"

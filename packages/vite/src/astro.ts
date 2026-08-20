@@ -3,14 +3,20 @@ import fittingroom, { type FittingroomOptions } from "./index.js";
 /**
  * Minimal Astro integration shape, defined locally so this package does
  * not depend on `astro`. Matches the subset of `AstroIntegration` that
- * `astro:config:setup` needs.
+ * `astro:config:setup` needs. Hook parameters are contravariant, so each
+ * context member must be a supertype of Astro's real one: `command`
+ * carries the full union, and `updateConfig` takes `any` because Astro
+ * types its parameter as `DeepPartial<AstroConfig>` — no wider
+ * non-`any` type is assignable to it. test/astro.test-d.ts asserts
+ * assignability to Astro's published `AstroIntegration` at compile
+ * time.
  */
 interface AstroIntegration {
   name: string;
   hooks: {
     "astro:config:setup": (context: {
-      command: "dev" | "build" | "preview";
-      updateConfig: (config: unknown) => void;
+      command: "dev" | "build" | "preview" | "sync";
+      updateConfig: (config: any) => unknown;
       injectScript: (stage: "head-inline", content: string) => void;
     }) => void;
   };
