@@ -58,12 +58,12 @@ describe("Compare", () => {
     render(<App adapter={adapter} />);
     await screen.findByText("midnight");
 
-    fireEvent.click(screen.getByRole("button", { name: "Compare midnight" }));
-    fireEvent.click(screen.getByRole("button", { name: "Compare sunrise" }));
+    fireEvent.click(screen.getByRole("button", { name: "Compare Fit: midnight" }));
+    fireEvent.click(screen.getByRole("button", { name: "Compare Fit: sunrise" }));
 
     expect(screen.queryByTitle("Preview")).toBeNull();
-    expect(pushedEdits("Preview midnight")["--primary"]).toBe("navy");
-    expect(pushedEdits("Preview sunrise")["--primary"]).toBe("coral");
+    expect(pushedEdits("Preview Fit: midnight")["--primary"]).toBe("navy");
+    expect(pushedEdits("Preview Fit: sunrise")["--primary"]).toBe("coral");
   });
 
   it("leaving compare restores the prior editing state", async () => {
@@ -73,8 +73,8 @@ describe("Compare", () => {
     await saveFit("sunny");
     await draftPrimary("blue");
 
-    fireEvent.click(screen.getByRole("button", { name: "Compare moody" }));
-    fireEvent.click(screen.getByRole("button", { name: "Compare sunny" }));
+    fireEvent.click(screen.getByRole("button", { name: "Compare Fit: moody" }));
+    fireEvent.click(screen.getByRole("button", { name: "Compare Fit: sunny" }));
     expect(screen.queryByTitle("Preview")).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Exit compare" }));
@@ -93,12 +93,12 @@ describe("Compare", () => {
     await saveFit("moody");
     await draftPrimary("blue");
 
-    fireEvent.click(screen.getByRole("button", { name: "Compare moody" }));
+    fireEvent.click(screen.getByRole("button", { name: "Compare Fit: moody" }));
     fireEvent.click(
       screen.getByRole("button", { name: "Compare unsaved draft" }),
     );
 
-    expect(pushedEdits("Preview moody")["--primary"]).toBe("green");
+    expect(pushedEdits("Preview Fit: moody")["--primary"]).toBe("green");
     expect(pushedEdits("Preview unsaved draft")["--primary"]).toBe("blue");
   });
 
@@ -107,7 +107,7 @@ describe("Compare", () => {
     await draftPrimary("green");
     await saveFit("moody");
 
-    const moody = () => screen.getByRole("button", { name: "Compare moody" });
+    const moody = () => screen.getByRole("button", { name: "Compare Fit: moody" });
     fireEvent.click(moody());
     fireEvent.click(
       screen.getByRole("button", { name: "Compare unsaved draft" }),
@@ -125,13 +125,65 @@ describe("Compare", () => {
     await saveFit("moody");
     await saveFit("sunny");
 
-    fireEvent.click(screen.getByRole("button", { name: "Compare moody" }));
-    fireEvent.click(screen.getByRole("button", { name: "Compare sunny" }));
+    fireEvent.click(screen.getByRole("button", { name: "Compare Fit: moody" }));
+    fireEvent.click(screen.getByRole("button", { name: "Compare Fit: sunny" }));
     expect(screen.queryByTitle("Preview")).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Delete moody" }));
 
     await expect.poll(() => screen.queryByTitle("Preview")).not.toBeNull();
+  });
+
+  it("compare is view-only: the editors disable, so exiting restores the prior draft", async () => {
+    render(<App adapter={createFakeAdapter()} />);
+    await draftPrimary("green");
+    await saveFit("moody");
+    await saveFit("sunny");
+    await draftPrimary("blue");
+
+    fireEvent.click(screen.getByRole("button", { name: "Compare Fit: moody" }));
+    fireEvent.click(screen.getByRole("button", { name: "Compare Fit: sunny" }));
+
+    // The editors' fieldset disables its descendants, so the browser
+    // refuses input on them: :disabled matches even though the input's
+    // own disabled attribute is absent.
+    expect(
+      screen.getByLabelText("--primary value").matches(":disabled"),
+    ).toBe(true);
+    expect(screen.getByRole("button", { name: "Commit 1 edit" })).toHaveProperty(
+      "disabled",
+      true,
+    );
+    for (const name of ["Apply moody", "Save Fit"]) {
+      expect(screen.getByRole("button", { name })).toHaveProperty(
+        "disabled",
+        true,
+      );
+    }
+
+    fireEvent.click(screen.getByRole("button", { name: "Exit compare" }));
+
+    expect(pushedEdits("Preview")["--primary"]).toBe("blue");
+    expect(
+      (screen.getByLabelText("--primary value") as HTMLInputElement).value,
+    ).toBe("blue");
+  });
+
+  it("a saved Fit named 'unsaved draft' stays distinguishable from the draft side", async () => {
+    render(<App adapter={createFakeAdapter()} />);
+    await draftPrimary("green");
+    await saveFit("unsaved draft");
+    await draftPrimary("blue");
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Compare Fit: unsaved draft" }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Compare unsaved draft" }),
+    );
+
+    expect(pushedEdits("Preview Fit: unsaved draft")["--primary"]).toBe("green");
+    expect(pushedEdits("Preview unsaved draft")["--primary"]).toBe("blue");
   });
 
   it("a third side cannot join a full compare", async () => {
@@ -140,8 +192,8 @@ describe("Compare", () => {
     await saveFit("moody");
     await saveFit("sunny");
 
-    fireEvent.click(screen.getByRole("button", { name: "Compare moody" }));
-    fireEvent.click(screen.getByRole("button", { name: "Compare sunny" }));
+    fireEvent.click(screen.getByRole("button", { name: "Compare Fit: moody" }));
+    fireEvent.click(screen.getByRole("button", { name: "Compare Fit: sunny" }));
 
     expect(
       screen.getByRole("button", { name: "Compare unsaved draft" }),

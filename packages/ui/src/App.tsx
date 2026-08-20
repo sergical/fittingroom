@@ -84,8 +84,9 @@ const NO_SPACING: SpacingState = { density: 1, bases: {} };
 
 /**
  * One side of a Compare: a saved Fit by name, or the unsaved draft.
- * Two picked sides render as dual Previews; compare never touches the
- * draft state, so leaving it restores the prior editing state by doing
+ * Two picked sides render as dual Previews. Compare is view-only:
+ * every control that could change the draft state disables while it is
+ * active, so leaving it restores the prior editing state by doing
  * nothing.
  */
 type CompareSide = { kind: "fit"; name: string } | { kind: "draft" };
@@ -93,8 +94,13 @@ type CompareSide = { kind: "fit"; name: string } | { kind: "draft" };
 const sideKey = (side: CompareSide): string =>
   side.kind === "fit" ? `fit:${side.name}` : "draft";
 
+/**
+ * The "Fit: " prefix keeps the two sides distinguishable even when a
+ * saved Fit is literally named "unsaved draft" — the draft side alone
+ * carries the bare label.
+ */
 const sideLabel = (side: CompareSide): string =>
-  side.kind === "fit" ? side.name : "unsaved draft";
+  side.kind === "fit" ? `Fit: ${side.name}` : "unsaved draft";
 
 /**
  * The entries of `current` that were added or changed since `before`:
@@ -561,7 +567,8 @@ export default function App({
           className="lab-commit"
           // A pending Apply or Mutation is about to replace the draft
           // state; a commit during it would write the stale drafts.
-          disabled={draftCount === 0 || applying || mutating}
+          // Compare is view-only, so committing waits until it exits.
+          disabled={draftCount === 0 || applying || mutating || comparing}
           onClick={() => void commit()}
         >
           Commit{draftCount > 0 ? ` ${draftCount} edit${draftCount > 1 ? "s" : ""}` : ""}
@@ -601,6 +608,10 @@ export default function App({
               hold a color, font, spacing, or shadow value the editor can edit.
             </p>
           )}
+          {/* Compare is view-only: an edit made while the dual Previews
+              hide the single Preview would change the draft invisibly
+              and surprise on exit, so the editors disable wholesale. */}
+          <fieldset className="lab-editors" disabled={comparing}>
           {colorTokens.length > 0 && sectionCount > 1 && (
             <h2 className="lab-section-title">Colors</h2>
           )}
@@ -792,6 +803,7 @@ export default function App({
               })}
             </>
           )}
+          </fieldset>
           {tokenDocument && (
             <section className="lab-fits" aria-label="Fits">
               <h2 className="lab-section-title">Fits</h2>
@@ -806,7 +818,14 @@ export default function App({
                 <button
                   type="button"
                   className="lab-save-fit"
-                  disabled={draftCount === 0 || fitName.trim() === "" || applying}
+                  // Comparing disables saving too: an overwrite could
+                  // change a compared side mid-compare.
+                  disabled={
+                    draftCount === 0 ||
+                    fitName.trim() === "" ||
+                    applying ||
+                    comparing
+                  }
                   onClick={() => void saveFit()}
                 >
                   Save Fit
@@ -821,7 +840,10 @@ export default function App({
                       <span className="lab-token-name">{fit.name}</span>
                       <button
                         type="button"
-                        aria-label={`Compare ${fit.name}`}
+                        // The sideLabel prefix keeps this button's name
+                        // distinct from "Compare unsaved draft" even for
+                        // a Fit literally named "unsaved draft".
+                        aria-label={`Compare ${sideLabel({ kind: "fit", name: fit.name })}`}
                         aria-pressed={sideSelected({ kind: "fit", name: fit.name })}
                         disabled={
                           comparing && !sideSelected({ kind: "fit", name: fit.name })
@@ -837,8 +859,9 @@ export default function App({
                         aria-label={`Apply ${fit.name}`}
                         // A pending Apply or Mutation is about to land its
                         // edit set; a second in-flight set would race it and
-                        // desync the drafts from the active Mutation.
-                        disabled={applying || mutating}
+                        // desync the drafts from the active Mutation. Compare
+                        // is view-only, so applying waits until it exits.
+                        disabled={applying || mutating || comparing}
                         onClick={() => void applyFit(fit.name)}
                       >
                         Apply
@@ -906,7 +929,11 @@ export default function App({
                 <button
                   type="button"
                   className="lab-mutate"
-                  disabled={prompt.trim() === "" || mutating || applying}
+                  // Compare is view-only: a Mutation would replace the
+                  // hidden draft state, so it waits until compare exits.
+                  disabled={
+                    prompt.trim() === "" || mutating || applying || comparing
+                  }
                   onClick={() => void requestMutation()}
                 >
                   {mutating ? "Mutating…" : mutation ? "Refine" : "Mutate"}

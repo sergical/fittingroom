@@ -112,6 +112,19 @@ body {
   overflow-y: auto;
 }
 
+/* The editors' fieldset exists to disable them wholesale during
+   compare; it must not read as a visual group. */
+.lab-editors {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+
+.lab-editors:disabled {
+  opacity: 0.5;
+}
+
 .lab-empty {
   color: #666;
 }
