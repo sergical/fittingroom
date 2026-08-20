@@ -83,6 +83,20 @@ interface SpacingState {
 const NO_SPACING: SpacingState = { density: 1, bases: {} };
 
 /**
+ * One side of a Compare: a saved Fit by name, or the unsaved draft.
+ * Two picked sides render as dual Previews; compare never touches the
+ * draft state, so leaving it restores the prior editing state by doing
+ * nothing.
+ */
+type CompareSide = { kind: "fit"; name: string } | { kind: "draft" };
+
+const sideKey = (side: CompareSide): string =>
+  side.kind === "fit" ? `fit:${side.name}` : "draft";
+
+const sideLabel = (side: CompareSide): string =>
+  side.kind === "fit" ? side.name : "unsaved draft";
+
+/**
  * The entries of `current` that were added or changed since `before`:
  * the edits a user typed while an adapter request was in flight, which
  * are newer than the response and must survive it.
@@ -146,6 +160,7 @@ export default function App({
   const [shadowTab, setShadowTab] = useState<"presets" | "sliders">("presets");
   const [fits, setFits] = useState<Fit[]>([]);
   const [fitName, setFitName] = useState("");
+  const [compareSides, setCompareSides] = useState<CompareSide[]>([]);
   const [applying, setApplying] = useState(false);
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [providerId, setProviderId] = useState("");
@@ -159,6 +174,7 @@ export default function App({
   const [error, setError] = useState<string | null>(null);
 
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const compareIframesRef = useRef<Array<HTMLIFrameElement | null>>([null, null]);
   const draftsRef = useRef(drafts);
   draftsRef.current = drafts;
   const schemeRef = useRef(scheme);
@@ -167,6 +183,10 @@ export default function App({
   spacingRef.current = spacing;
   const documentRef = useRef(tokenDocument);
   documentRef.current = tokenDocument;
+  const fitsRef = useRef(fits);
+  fitsRef.current = fits;
+  const compareSidesRef = useRef(compareSides);
+  compareSidesRef.current = compareSides;
   // Every completed save/delete records its transform so the initial
   // list-fits response — which may resolve after them — can replay the
   // newer mutations instead of overwriting them with a stale list.
@@ -216,13 +236,15 @@ export default function App({
     return [...new Set(families)];
   };
 
-  const pushPreview = () => {
-    const merged = mergedDrafts();
-    const buckets = previewBuckets(documentRef.current, merged);
+  const postPreview = (
+    iframe: HTMLIFrameElement | null,
+    edits: Record<string, Edit>,
+  ) => {
+    const buckets = previewBuckets(documentRef.current, edits);
     // The candidate font must render in place, so the preview client
     // loads its stylesheet inside the iframe alongside the overrides.
-    const families = googleFamilies(merged);
-    iframeRef.current?.contentWindow?.postMessage(
+    const families = googleFamilies(edits);
+    iframe?.contentWindow?.postMessage(
       {
         type: "fittingroom:preview",
         edits: buckets.light,
@@ -232,6 +254,23 @@ export default function App({
       },
       window.location.origin,
     );
+  };
+
+  /** The edit set one compare side shows. */
+  const sideEdits = (side: CompareSide): Record<string, Edit> =>
+    side.kind === "draft"
+      ? mergedDrafts()
+      : (fitsRef.current.find((fit) => fit.name === side.name)?.edits ?? {});
+
+  const pushPreview = () => {
+    const sides = compareSidesRef.current;
+    if (sides.length === 2) {
+      sides.forEach((side, index) =>
+        postPreview(compareIframesRef.current[index], sideEdits(side)),
+      );
+    } else {
+      postPreview(iframeRef.current, mergedDrafts());
+    }
   };
 
   useEffect(() => {
@@ -268,7 +307,7 @@ export default function App({
     localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(drafts));
     localStorage.setItem(SPACING_STORAGE_KEY, JSON.stringify(spacing));
     pushPreview();
-  }, [drafts, spacing, scheme, tokenDocument]);
+  }, [drafts, spacing, scheme, tokenDocument, fits, compareSides]);
 
   /** Edit what you see: a change targets the previewed scheme's half. */
   const setDraft = (token: Token, value: string) => {
@@ -470,10 +509,28 @@ export default function App({
     const response = await adapter.handle({ type: "delete-fit", name });
     if (response.type === "fit-deleted") {
       mutateFits((previous) => previous.filter((fit) => fit.name !== response.name));
+      // A deleted Fit can no longer be a compare side; dropping it
+      // leaves compare, back to the untouched editing state.
+      setCompareSides((previous) =>
+        previous.filter(
+          (side) => side.kind !== "fit" || side.name !== response.name,
+        ),
+      );
       setError(null);
     } else if (response.type === "error") {
       setError(response.message);
     }
+  };
+
+  const sideSelected = (side: CompareSide): boolean =>
+    compareSides.some((picked) => sideKey(picked) === sideKey(side));
+
+  const toggleCompareSide = (side: CompareSide) => {
+    setCompareSides((previous) =>
+      previous.some((picked) => sideKey(picked) === sideKey(side))
+        ? previous.filter((picked) => sideKey(picked) !== sideKey(side))
+        : [...previous, side],
+    );
   };
 
   const colorTokens =
@@ -490,6 +547,7 @@ export default function App({
     spacing.bases,
   );
   const draftCount = Object.keys({ ...derivedSpacing, ...drafts }).length;
+  const comparing = compareSides.length === 2;
 
   return (
     <div className="lab-shell">
@@ -763,6 +821,19 @@ export default function App({
                       <span className="lab-token-name">{fit.name}</span>
                       <button
                         type="button"
+                        aria-label={`Compare ${fit.name}`}
+                        aria-pressed={sideSelected({ kind: "fit", name: fit.name })}
+                        disabled={
+                          comparing && !sideSelected({ kind: "fit", name: fit.name })
+                        }
+                        onClick={() =>
+                          toggleCompareSide({ kind: "fit", name: fit.name })
+                        }
+                      >
+                        Compare
+                      </button>
+                      <button
+                        type="button"
                         aria-label={`Apply ${fit.name}`}
                         // A pending Apply or Mutation is about to land its
                         // edit set; a second in-flight set would race it and
@@ -783,6 +854,23 @@ export default function App({
                     </li>
                   ))}
                 </ul>
+              )}
+              {fits.length > 0 && (
+                <button
+                  type="button"
+                  className="lab-compare-draft"
+                  aria-label="Compare unsaved draft"
+                  aria-pressed={sideSelected({ kind: "draft" })}
+                  // The draft side needs a draft to show, and a full
+                  // compare has no seat left for a third side.
+                  disabled={
+                    !sideSelected({ kind: "draft" }) &&
+                    (draftCount === 0 || comparing)
+                  }
+                  onClick={() => toggleCompareSide({ kind: "draft" })}
+                >
+                  Compare unsaved draft
+                </button>
               )}
             </section>
           )}
@@ -836,6 +924,15 @@ export default function App({
 
         <section className="lab-preview" aria-label="Preview">
           <div className="lab-preview-bar">
+            {comparing && (
+              <button
+                type="button"
+                className="lab-exit-compare"
+                onClick={() => setCompareSides([])}
+              >
+                Exit compare
+              </button>
+            )}
             {/* Edit what you see: the toggle decides which half of a
                 light/dark pair the editors show and an edit targets. */}
             <button
@@ -850,12 +947,30 @@ export default function App({
               {scheme === "dark" ? "Dark" : "Light"}
             </button>
           </div>
-          <iframe
-            ref={iframeRef}
-            title="Preview"
-            src={previewSrc}
-            onLoad={pushPreview}
-          />
+          {comparing ? (
+            <div className="lab-compare-panes">
+              {compareSides.map((side, index) => (
+                <figure className="lab-compare-side" key={sideKey(side)}>
+                  <figcaption>{sideLabel(side)}</figcaption>
+                  <iframe
+                    ref={(iframe) => {
+                      compareIframesRef.current[index] = iframe;
+                    }}
+                    title={`Preview ${sideLabel(side)}`}
+                    src={previewSrc}
+                    onLoad={pushPreview}
+                  />
+                </figure>
+              ))}
+            </div>
+          ) : (
+            <iframe
+              ref={iframeRef}
+              title="Preview"
+              src={previewSrc}
+              onLoad={pushPreview}
+            />
+          )}
         </section>
       </div>
     </div>
