@@ -67,7 +67,38 @@ describe("TokenSource round-trip refusal", () => {
     expect(result.status).toBe("refused");
     if (result.status === "refused") {
       expect(result.reason).toContain("cannot be parsed");
-      expect(typeof result.diff).toBe("string");
+      // The diff is the change the source declined to make, so the
+      // developer can apply it by hand. A bare-string edit targets the
+      // light half: the first occurrence.
+      expect(result.diff).toContain("-  --primary: red;");
+      expect(result.diff).toContain("+  --primary: green;");
+      expect(result.diff).not.toContain("-  --primary: blue;");
+    }
+    expect(readFileSync(path, "utf8")).toBe(css);
+  });
+
+  it("a dark-half edit's refusal diff targets the dark occurrence", () => {
+    const path = tempFile(css);
+    const result = createTokenSource(path).write({
+      "--primary": { dark: "green" },
+    });
+
+    expect(result.status).toBe("refused");
+    if (result.status === "refused") {
+      expect(result.diff).toContain("-  --primary: blue;");
+      expect(result.diff).toContain("+  --primary: green;");
+      expect(result.diff).not.toContain("-  --primary: red;");
+    }
+    expect(readFileSync(path, "utf8")).toBe(css);
+  });
+
+  it("the refusal diff is empty when no edited token appears in the file", () => {
+    const path = tempFile(css);
+    const result = createTokenSource(path).write({ "--absent": "green" });
+
+    expect(result.status).toBe("refused");
+    if (result.status === "refused") {
+      expect(result.diff).toBe("");
     }
     expect(readFileSync(path, "utf8")).toBe(css);
   });

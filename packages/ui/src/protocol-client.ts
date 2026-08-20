@@ -1,4 +1,8 @@
-import type { ProtocolRequest, ProtocolResponse } from "@fittingroom/core";
+import type {
+  ProtocolAdapter,
+  ProtocolRequest,
+  ProtocolResponse,
+} from "@fittingroom/core";
 
 /**
  * Sends one Protocol request to the plugin's endpoint. The URL is
@@ -18,3 +22,9 @@ export async function sendProtocolRequest(
   }
   return (await response.json()) as ProtocolResponse;
 }
+
+/**
+ * The Protocol adapter the shipped UI talks through. Tests hand App the
+ * in-memory fake adapter instead — the UI never knows the difference.
+ */
+export const httpAdapter: ProtocolAdapter = { handle: sendProtocolRequest };

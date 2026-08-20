@@ -129,7 +129,7 @@ describe.each(harnesses)("$adapter adapter protocol conformance", (h) => {
     expect(response.type).toBe("refused");
     if (response.type === "refused") {
       expect(response.reason).not.toBe("");
-      expect(typeof response.diff).toBe("string");
+      expect(response.diff).not.toBe("");
     }
   });
 
@@ -280,6 +280,27 @@ describe("token-source adapter", () => {
       type: "fits",
       fits: [{ name: "moody", edits: { "--primary": "blue" } }],
     });
+  });
+
+  it("a commit against an unparseable target refuses with the declined change as a diff; the file is untouched", async () => {
+    const cssPath = tempFile(unparseableCss);
+    const adapter = createTokenSourceAdapter({
+      source: createTokenSource(cssPath),
+      fitsDir: join(dirname(cssPath), ".fittingroom"),
+    });
+
+    const response = await adapter.handle({
+      type: "commit",
+      edits: { "--primary": { light: "green" } },
+    });
+
+    expect(response.type).toBe("refused");
+    if (response.type === "refused") {
+      expect(response.reason).toContain("cannot be parsed");
+      expect(response.diff).toContain("-  --primary: red;");
+      expect(response.diff).toContain("+  --primary: green;");
+    }
+    expect(readFileSync(cssPath, "utf8")).toBe(unparseableCss);
   });
 
   it("read and preview report a file in no known dialect", async () => {

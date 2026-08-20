@@ -1,6 +1,13 @@
 import { useEffect, useRef, useState } from "react";
-import type { Edit, Edits, Token, TokenDocument } from "@fittingroom/core";
-import { sendProtocolRequest } from "./protocol-client.js";
+import type {
+  Edit,
+  Edits,
+  ProtocolAdapter,
+  Token,
+  TokenDocument,
+} from "@fittingroom/core";
+import { httpAdapter } from "./protocol-client.js";
+import RefusedWrite from "./refused-write.js";
 import {
   draftedValue,
   previewBuckets,
@@ -101,7 +108,16 @@ function loadSpacing(): SpacingState {
   return NO_SPACING;
 }
 
-export default function App() {
+/**
+ * The lab UI is a Protocol client and nothing more: it takes whatever
+ * adapter it is handed — the shipped UI gets the HTTP adapter, tests
+ * and the hosted demo the in-memory fake.
+ */
+export default function App({
+  adapter = httpAdapter,
+}: {
+  adapter?: ProtocolAdapter;
+}) {
   const [tokenDocument, setTokenDocument] = useState<TokenDocument | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [drafts, setDrafts] = useState<Drafts>(loadDrafts);
@@ -180,12 +196,12 @@ export default function App() {
   };
 
   useEffect(() => {
-    void sendProtocolRequest({ type: "read" }).then((response) => {
+    void adapter.handle({ type: "read" }).then((response) => {
       if (response.type === "document") setTokenDocument(response.document);
       if (response.type === "error") setError(response.message);
       setLoaded(true);
     });
-  }, []);
+  }, [adapter]);
 
   useEffect(() => {
     localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(drafts));
@@ -226,7 +242,7 @@ export default function App() {
   const commit = async () => {
     const committed = mergedDrafts();
     const submittedSpacing = spacingRef.current;
-    const response = await sendProtocolRequest({
+    const response = await adapter.handle({
       type: "commit",
       edits: toEdits(committed),
     });
@@ -271,7 +287,7 @@ export default function App() {
       );
       setRefusal(null);
       setError(null);
-      const read = await sendProtocolRequest({ type: "read" });
+      const read = await adapter.handle({ type: "read" });
       if (read.type === "document") setTokenDocument(read.document);
     } else if (response.type === "refused") {
       setRefusal({ reason: response.reason, diff: response.diff });
@@ -313,12 +329,7 @@ export default function App() {
       </header>
 
       {error && <p className="lab-error">{error}</p>}
-      {refusal && (
-        <section className="lab-refusal" aria-label="Refused write">
-          <p>Write refused: {refusal.reason}</p>
-          {refusal.diff && <pre>{refusal.diff}</pre>}
-        </section>
-      )}
+      {refusal && <RefusedWrite reason={refusal.reason} diff={refusal.diff} />}
       {importSnippet && (
         <section className="lab-import" aria-label="Font import">
           <p>

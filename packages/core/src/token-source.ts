@@ -9,11 +9,13 @@ import type { Edits, TokenDocument } from "./model/types.js";
 /**
  * The outcome of `TokenSource.write()`. A write the source cannot make
  * safely is refused with a reason — never applied partially or
- * destructively. When the refused change could be computed (the file
- * parses, but does not re-serialize byte-identically), `diff` carries
- * the unified diff of the change the source declined to make; when no
- * change could even be computed (unknown dialect, unparseable file,
- * invalid edit value), `diff` is empty.
+ * destructively. When the refusal is about the file (unknown dialect,
+ * unparseable, no byte-identical round-trip), `diff` carries a
+ * best-effort unified diff of the change the source declined to make —
+ * computed textually, so it exists even for a file that cannot be
+ * parsed — letting the caller apply the change by hand. `diff` is empty
+ * when no edited token appears in the file, and for an invalid edit
+ * value (there is no change worth applying).
  */
 export type WriteResult =
   | { status: "applied" }
@@ -68,12 +70,14 @@ export function createTokenSource(filePath: string): TokenSource {
       if (invalidEdit) return refused(invalidEdit);
 
       const css = readFileSync(filePath, "utf8");
+      const declined = () => declinedChangeDiff(filePath, css, edits);
       const dialect = detectDialect(css);
       if (!dialect) {
         return refused(
           `${filePath} is in no known dialect (supported: ${dialects
             .map((d) => d.name)
             .join(", ")})`,
+          declined(),
         );
       }
 
@@ -85,12 +89,13 @@ export function createTokenSource(filePath: string): TokenSource {
       } catch (error) {
         return refused(
           `${filePath} cannot be parsed: ${error instanceof Error ? error.message : String(error)}`,
+          declined(),
         );
       }
       if (roundTripped !== css) {
         return refused(
           `${filePath} does not re-serialize byte-identically, so patching it could corrupt it`,
-          createTwoFilesPatch(filePath, filePath, css, roundTripped),
+          declined(),
         );
       }
 
@@ -102,6 +107,39 @@ export function createTokenSource(filePath: string): TokenSource {
 
 function refused(reason: string, diff = ""): WriteResult {
   return { status: "refused", reason, diff };
+}
+
+/**
+ * Best-effort unified diff of the change the source declined to make,
+ * so a refused write still hands the caller a patch to apply by hand.
+ * Substitutes declaration values textually — no dialect parse, so it
+ * works on the very files that get refused. A token's occurrences map
+ * to scheme halves in order: the first takes the light half (or a bare
+ * string), the second the dark half — how both dialects lay pairs out.
+ * Display-only; never written back.
+ */
+function declinedChangeDiff(
+  filePath: string,
+  css: string,
+  edits: Edits,
+): string {
+  let intended = css;
+  for (const [name, edit] of Object.entries(edits)) {
+    const halves =
+      typeof edit === "string" ? [edit] : [edit.light, edit.dark];
+    const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    let occurrence = 0;
+    intended = intended.replace(
+      new RegExp(`(${escapedName}\\s*:\\s*)([^;}\\n]+)`, "g"),
+      (match, before: string) => {
+        const half = halves[occurrence];
+        occurrence += 1;
+        return half === undefined ? match : before + half;
+      },
+    );
+  }
+  if (intended === css) return "";
+  return createTwoFilesPatch(filePath, filePath, css, intended);
 }
 
 /**

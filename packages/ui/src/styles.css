@@ -65,6 +65,15 @@ body {
   font-size: 0.75rem;
 }
 
+.lab-refusal-rendered {
+  margin: 0.5rem 0 0;
+  overflow-x: auto;
+}
+
+.lab-refusal .lab-copy {
+  margin-top: 0.5rem;
+}
+
 .lab-import {
   border: 1px solid #d6d3d1;
   border-radius: 0.375rem;
