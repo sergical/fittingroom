@@ -4,6 +4,7 @@
   "compatibility_date": "2026-08-20",
   "assets": { "directory": "./dist-demo" },
   // custom_domain makes Cloudflare manage the DNS record and certificate for
-  // the hostname; the workers.dev URL keeps working alongside it.
+  // the hostname. Declaring any route also retires the workers.dev URL,
+  // which is intended: the demo has one address.
   "routes": [{ "pattern": "fittingroom.serg.tech", "custom_domain": true }]
 }

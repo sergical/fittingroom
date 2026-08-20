@@ -20,7 +20,7 @@ SvelteKit); Next.js support is planned later.
 ## Demo
 
 Try the fitting room without installing anything:
-[fittingroom-demo.s-a62.workers.dev](https://fittingroom-demo.s-a62.workers.dev).
+[fittingroom.serg.tech](https://fittingroom.serg.tech).
 The demo runs the lab UI on the in-memory fake adapter with a sample
 token set — edits preview live against a sample page, and Commit shows
 the patch a real install would have written to your CSS. Nothing is
