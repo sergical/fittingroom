@@ -56,8 +56,10 @@ afterAll(async () => {
  * previews as one composed light-dark() value in both rules, letting
  * the previewed color-scheme pick the half.
  */
+const previewFrame = () => page.frames().find((f) => f !== page.mainFrame());
+
 const previewRuleVar = (index: number, name: string) => {
-  const frame = page.frames().find((f) => f !== page.mainFrame());
+  const frame = previewFrame();
   return frame
     ? frame.evaluate(
         ([ruleIndex, property]) => {
@@ -74,6 +76,27 @@ const previewRuleVar = (index: number, name: string) => {
     : "";
 };
 
+// The live-Preview proof: the scheme toggle must change what the iframe
+// actually renders, not just the declarations it holds. The `.dark`
+// class marks the active scheme, and the fixture heading's computed
+// color shows which half of the light-dark() pair won.
+const iframeIsDark = () => {
+  const frame = previewFrame();
+  return frame
+    ? frame.evaluate(() => document.documentElement.classList.contains("dark"))
+    : false;
+};
+
+const heroColor = () => {
+  const frame = previewFrame();
+  return frame
+    ? frame.evaluate(() => {
+        const heading = document.querySelector(".hero h1");
+        return heading ? getComputedStyle(heading).color : "";
+      })
+    : "";
+};
+
 it("detects emdash, edits both halves via the scheme toggle, and commits one pair", async () => {
   const themePath = join(root, "src", "theme.css");
   const stylesPath = join(root, "src", "styles.css");
@@ -87,6 +110,8 @@ it("detects emdash, edits both halves via the scheme toggle, and commits one pai
   // shadcn markers anywhere in the fixture.
   await page.goto(`${baseUrl}/__fittingroom`);
   await expect.poll(() => brandValue.inputValue()).toBe("#4f46e5");
+  await expect.poll(iframeIsDark).toBe(false);
+  await expect.poll(heroColor).toBe("rgb(79, 70, 229)");
   await expect
     .poll(() =>
       page.locator('input[aria-label="--color-brand picker"]').isVisible(),
@@ -99,18 +124,26 @@ it("detects emdash, edits both halves via the scheme toggle, and commits one pai
   await expect
     .poll(() => previewRuleVar(0, "--color-brand"))
     .toBe("light-dark(#ff0000, #818cf8)");
+  await expect.poll(heroColor).toBe("rgb(255, 0, 0)");
   expect(readFileSync(themePath, "utf8")).toBe(originalTheme);
 
-  // Toggle: the Preview flips to dark and the editor shows the dark half.
+  // Toggle: the Preview flips to dark — the iframe renders the pair's
+  // dark half — and the editor shows that half.
   await toggle.click();
+  await expect.poll(iframeIsDark).toBe(true);
+  await expect.poll(heroColor).toBe("rgb(129, 140, 248)");
   await expect.poll(() => brandValue.inputValue()).toBe("#818cf8");
   await brandValue.fill("#00ff00");
   await expect
     .poll(() => previewRuleVar(1, "--color-brand"))
     .toBe("light-dark(#ff0000, #00ff00)");
+  await expect.poll(heroColor).toBe("rgb(0, 255, 0)");
 
-  // Toggle back: the light half kept its own draft.
+  // Toggle back: the Preview renders the light half again, which kept
+  // its own draft.
   await toggle.click();
+  await expect.poll(iframeIsDark).toBe(false);
+  await expect.poll(heroColor).toBe("rgb(255, 0, 0)");
   await expect.poll(() => brandValue.inputValue()).toBe("#ff0000");
 
   // Commit: one declaration in the theme override file changes — the
