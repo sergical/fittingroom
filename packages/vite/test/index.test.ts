@@ -170,6 +170,10 @@ describe("fittingroom dev server", () => {
 
     const script = await fetch(`${baseUrl}/__fittingroom/preview-client.js`);
     expect(script.status).toBe(200);
-    expect(await script.text()).toContain("fittingroom:preview");
+    const text = await script.text();
+    expect(text).toContain("fittingroom:preview");
+    // Font audition links are restricted to Google Fonts: the preview
+    // channel must not load arbitrary stylesheets into the host app.
+    expect(text).toContain('url.startsWith("https://fonts.googleapis.com/")');
   });
 });

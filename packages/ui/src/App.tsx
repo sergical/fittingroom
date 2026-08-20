@@ -16,6 +16,15 @@ import {
   type DecomposedShadow,
   type ShadowLength,
 } from "./shadow.js";
+import {
+  fontImportSnippet,
+  GOOGLE_FONTS,
+  googleFontByFamily,
+  googleFontsUrl,
+  isFontToken,
+  primaryFamily,
+  withFamily,
+} from "./font.js";
 
 /** Unsaved edits live in localStorage so a reload of the lab UI keeps them. */
 const DRAFT_STORAGE_KEY = "fittingroom:draft-edits";
@@ -90,6 +99,7 @@ export default function App() {
   const [drafts, setDrafts] = useState<Drafts>(loadDrafts);
   const [spacing, setSpacing] = useState<SpacingState>(loadSpacing);
   const [shadowTab, setShadowTab] = useState<"presets" | "sliders">("presets");
+  const [importSnippet, setImportSnippet] = useState<string | null>(null);
   const [refusal, setRefusal] = useState<{ reason: string; diff: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -132,15 +142,41 @@ export default function App() {
     ...draftsRef.current,
   });
 
+  /**
+   * The Google families an edit set auditions: the primary family of
+   * every font-token edit that names a font from the curated list.
+   * Hand-typed families stay out — there is nothing to load for them.
+   */
+  const googleFamilies = (edits: Record<string, SpacingEdit>): string[] => {
+    const families = Object.entries(edits)
+      .filter(([name]) => {
+        const token = tokenByName(name);
+        return token !== undefined && isFontToken(token);
+      })
+      .map(([, draft]) =>
+        primaryFamily(typeof draft === "string" ? draft : draft.light),
+      )
+      .filter((family) => googleFontByFamily(family) !== undefined);
+    return [...new Set(families)];
+  };
+
   const pushPreview = () => {
+    const merged = mergedDrafts();
     const edits = Object.fromEntries(
-      Object.entries(mergedDrafts()).map(([name, draft]) => [
+      Object.entries(merged).map(([name, draft]) => [
         name,
         previewValue(tokenByName(name), draft),
       ]),
     );
+    // The candidate font must render in place, so the preview client
+    // loads its stylesheet inside the iframe alongside the overrides.
+    const families = googleFamilies(merged);
     iframeRef.current?.contentWindow?.postMessage(
-      { type: "fittingroom:preview", edits },
+      {
+        type: "fittingroom:preview",
+        edits,
+        fonts: families.length > 0 ? [googleFontsUrl(families)] : [],
+      },
       window.location.origin,
     );
   };
@@ -227,6 +263,12 @@ export default function App() {
           ),
         };
       });
+      // The commit wrote only the variable value; loading the font is
+      // the developer's move, so hand over the import they need.
+      const committedFamilies = googleFamilies(committed);
+      setImportSnippet(
+        committedFamilies.length > 0 ? fontImportSnippet(committedFamilies) : null,
+      );
       setRefusal(null);
       setError(null);
       const read = await sendProtocolRequest({ type: "read" });
@@ -240,9 +282,10 @@ export default function App() {
 
   const colorTokens =
     tokenDocument?.tokens.filter((token) => isColorValue(baseValue(token))) ?? [];
+  const fontTokens = tokenDocument?.tokens.filter(isFontToken) ?? [];
   const spacingTokens = tokenDocument?.tokens.filter(isSpacingToken) ?? [];
   const shadowTokens = tokenDocument?.tokens.filter(isShadowToken) ?? [];
-  const sectionCount = [colorTokens, spacingTokens, shadowTokens].filter(
+  const sectionCount = [colorTokens, fontTokens, spacingTokens, shadowTokens].filter(
     (tokens) => tokens.length > 0,
   ).length;
   const derivedSpacing = spacingEdits(
@@ -276,6 +319,22 @@ export default function App() {
           {refusal.diff && <pre>{refusal.diff}</pre>}
         </section>
       )}
+      {importSnippet && (
+        <section className="lab-import" aria-label="Font import">
+          <p>
+            Committed. Add this import where your app's CSS begins so it loads
+            the font:
+          </p>
+          <pre>{importSnippet}</pre>
+          <button
+            type="button"
+            className="lab-copy"
+            onClick={() => void navigator.clipboard.writeText(importSnippet)}
+          >
+            Copy
+          </button>
+        </section>
+      )}
 
       <div className="lab-panes">
         <section className="lab-token-list" aria-label="Tokens">
@@ -288,7 +347,7 @@ export default function App() {
             <p className="lab-empty">
               {tokenDocument.tokens.length} token
               {tokenDocument.tokens.length === 1 ? "" : "s"} detected, but none
-              hold a color, spacing, or shadow value the editor can edit.
+              hold a color, font, spacing, or shadow value the editor can edit.
             </p>
           )}
           {colorTokens.length > 0 && sectionCount > 1 && (
@@ -314,6 +373,43 @@ export default function App() {
               </div>
             );
           })}
+          {fontTokens.length > 0 && (
+            <>
+              <h2 className="lab-section-title">Fonts</h2>
+              {fontTokens.map((token) => {
+                const current = drafts[token.name] ?? baseValue(token);
+                const picked = googleFontByFamily(primaryFamily(current));
+                return (
+                  <div className="lab-token" key={token.name}>
+                    <span className="lab-token-name">{token.name}</span>
+                    <select
+                      aria-label={`${token.name} font`}
+                      value={picked?.family ?? ""}
+                      onChange={(event) => {
+                        const font = googleFontByFamily(event.target.value);
+                        if (font) setDraft(token, withFamily(current, font));
+                      }}
+                    >
+                      {/* The current stack when no Google font is picked;
+                          selecting it again is a no-op, not an edit. */}
+                      {!picked && <option value="">{primaryFamily(current)}</option>}
+                      {GOOGLE_FONTS.map((font) => (
+                        <option key={font.family} value={font.family}>
+                          {font.family}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      type="text"
+                      aria-label={`${token.name} value`}
+                      value={current}
+                      onChange={(event) => setDraft(token, event.target.value)}
+                    />
+                  </div>
+                );
+              })}
+            </>
+          )}
           {spacingTokens.length > 0 && (
             <>
               <h2 className="lab-section-title">Spacing</h2>

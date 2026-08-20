@@ -185,3 +185,53 @@ it("picks a shadow preset, tunes it with the sliders, and commits one string", a
     );
   await expect.poll(() => previewVar("--shadow-md")).toBe("");
 });
+
+// The font loop from issue #8: picking a Google Font auditions it live
+// in the Preview (the candidate stylesheet loads inside the iframe),
+// commit writes only the variable value, and the import snippet is
+// handed over with a copy action.
+it("auditions a Google Font, commits only the value, and hands over the import", async () => {
+  const cssPath = join(root, "src", "styles.css");
+  const originalCss = readFileSync(cssPath, "utf8");
+
+  // Pick: the preview shows the candidate value and loads its stylesheet.
+  await page
+    .locator('select[aria-label="--font-sans font"]')
+    .selectOption("Inter");
+  await expect.poll(() => previewVar("--font-sans")).toBe('"Inter", sans-serif');
+  const auditionLink = () => {
+    const frame = page.frames().find((f) => f !== page.mainFrame());
+    return frame
+      ? frame.evaluate(
+          () =>
+            document.querySelector<HTMLLinkElement>(
+              'link[href^="https://fonts.googleapis.com/"]',
+            )?.href ?? "",
+        )
+      : "";
+  };
+  await expect.poll(auditionLink).toContain("family=Inter");
+  expect(readFileSync(cssPath, "utf8")).toBe(originalCss);
+
+  // Commit: only the variable value changes in the file.
+  await page.locator("button.lab-commit").click();
+  await expect
+    .poll(() => readFileSync(cssPath, "utf8"))
+    .toBe(
+      originalCss.replace(
+        "--font-sans: system-ui, sans-serif;",
+        '--font-sans: "Inter", sans-serif;',
+      ),
+    );
+
+  // Handover: the import snippet appears with a copy action, and the
+  // preview override is gone — loading the font is the developer's move.
+  const handover = page.locator('[aria-label="Font import"]');
+  await expect
+    .poll(() => handover.locator("pre").textContent())
+    .toContain("@import url('https://fonts.googleapis.com/css2?family=Inter");
+  await expect
+    .poll(() => handover.locator("button", { hasText: "Copy" }).isVisible())
+    .toBe(true);
+  await expect.poll(() => previewVar("--font-sans")).toBe("");
+});

@@ -33,10 +33,36 @@ export interface FittingroomOptions {
  * override class-based dark values — in dark mode the page keeps
  * showing what the file's \`.dark\` rule declares, matching what a
  * commit would leave behind.
+ *
+ * A message may also carry \`fonts\`: Google Fonts stylesheet URLs the
+ * lab wants loaded so a candidate font auditions in place. Only
+ * fonts.googleapis.com URLs are accepted — the preview channel must not
+ * become a way to load arbitrary stylesheets into the host app.
  */
 const PREVIEW_CLIENT = `(() => {
   let rule = null;
   const applied = new Set();
+  const fontLinks = new Map();
+  const applyFonts = (fonts) => {
+    const wanted = (Array.isArray(fonts) ? fonts : []).filter(
+      (url) => typeof url === "string" && url.startsWith("https://fonts.googleapis.com/"),
+    );
+    for (const [url, link] of [...fontLinks]) {
+      if (!wanted.includes(url)) {
+        link.remove();
+        fontLinks.delete(url);
+      }
+    }
+    for (const url of wanted) {
+      if (!fontLinks.has(url)) {
+        const link = document.createElement("link");
+        link.rel = "stylesheet";
+        link.href = url;
+        document.head.append(link);
+        fontLinks.set(url, link);
+      }
+    }
+  };
   const previewRule = () => {
     if (rule) return rule;
     const sheet = document.createElement("style");
@@ -50,6 +76,7 @@ const PREVIEW_CLIENT = `(() => {
     if (event.origin !== window.location.origin) return;
     const data = event.data;
     if (!data || data.type !== "fittingroom:preview" || typeof data.edits !== "object" || data.edits === null) return;
+    applyFonts(data.fonts);
     const style = previewRule().style;
     for (const name of [...applied]) {
       if (!(name in data.edits)) {
