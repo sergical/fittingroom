@@ -49,6 +49,25 @@ describe("Provider detection", () => {
     expect(providers.map((p) => p.kind)).toEqual(["cli", "cli", "api"]);
   });
 
+  it("orders workers-ai before openrouter when both are enabled", () => {
+    const claudeDir = stubBinaryDir("claude", "{}");
+    const providers = detectProviders({
+      env: {
+        PATH: claudeDir,
+        OPENROUTER_API_KEY: "sk-or-test",
+        CLOUDFLARE_ACCOUNT_ID: "acct",
+        CLOUDFLARE_AI_GATEWAY_ID: "gw",
+        CLOUDFLARE_API_TOKEN: "cf-token",
+      },
+    });
+
+    expect(providers.map((p) => p.id)).toEqual([
+      "claude",
+      "workers-ai",
+      "openrouter",
+    ]);
+  });
+
   it("zero hits means the feature is absent, not broken", () => {
     expect(detectProviders({ env: { PATH: "" } })).toEqual([]);
   });
@@ -143,6 +162,57 @@ describe("edit-set extraction", () => {
   });
 });
 
+describe("Workers AI adapter contract", () => {
+  it("is absent unless all three Cloudflare env vars are set", () => {
+    expect(
+      detectProviders({
+        env: { PATH: "", CLOUDFLARE_ACCOUNT_ID: "acct" },
+      }),
+    ).toEqual([]);
+    expect(
+      detectProviders({
+        env: {
+          PATH: "",
+          CLOUDFLARE_ACCOUNT_ID: "acct",
+          CLOUDFLARE_AI_GATEWAY_ID: "gw",
+        },
+      }),
+    ).toEqual([]);
+  });
+
+  it("posts through the AI Gateway with the gateway token", async () => {
+    const calls: Array<{ url: string; init: RequestInit }> = [];
+    const fetchImpl = (async (url: string | URL | Request, init?: RequestInit) => {
+      calls.push({ url: String(url), init: init! });
+      return new Response(
+        JSON.stringify({
+          choices: [{ message: { content: '{"--primary": "teal"}' } }],
+        }),
+      );
+    }) as typeof fetch;
+    const [workersAi] = detectProviders({
+      env: {
+        PATH: "",
+        CLOUDFLARE_ACCOUNT_ID: "acct",
+        CLOUDFLARE_AI_GATEWAY_ID: "gw",
+        CLOUDFLARE_API_TOKEN: "cf-token",
+      },
+      fetchImpl,
+    });
+
+    const edits = await workersAi.mutate({ prompt: "teal", document });
+
+    expect(edits).toEqual({ "--primary": "teal" });
+    expect(calls[0].url).toBe(
+      "https://gateway.ai.cloudflare.com/v1/acct/gw/workers-ai/v1/chat/completions",
+    );
+    const headers = calls[0].init.headers as Record<string, string>;
+    expect(headers.Authorization).toBe("Bearer cf-token");
+    const body = JSON.parse(calls[0].init.body as string) as { model: string };
+    expect(body.model).not.toBe("");
+  });
+});
+
 describe("OpenRouter adapter contract", () => {
   it("posts the prompt with the key and parses the completion", async () => {
     const calls: Array<{ url: string; init: RequestInit }> = [];
@@ -186,6 +256,33 @@ describe("OpenRouter adapter contract", () => {
 
     await expect(openrouter.mutate({ prompt: "x", document })).rejects.toThrow(
       /401/,
+    );
+  });
+
+  it("routes through the AI Gateway when a Cloudflare account and gateway are set", async () => {
+    const calls: string[] = [];
+    const fetchImpl = (async (url: string | URL | Request) => {
+      calls.push(String(url));
+      return new Response(
+        JSON.stringify({
+          choices: [{ message: { content: '{"--primary": "black"}' } }],
+        }),
+      );
+    }) as typeof fetch;
+    const [openrouter] = detectProviders({
+      env: {
+        PATH: "",
+        OPENROUTER_API_KEY: "sk-or-test",
+        CLOUDFLARE_ACCOUNT_ID: "acct",
+        CLOUDFLARE_AI_GATEWAY_ID: "gw",
+      },
+      fetchImpl,
+    });
+
+    await openrouter.mutate({ prompt: "darker", document });
+
+    expect(calls[0]).toBe(
+      "https://gateway.ai.cloudflare.com/v1/acct/gw/openrouter/v1/chat/completions",
     );
   });
 });

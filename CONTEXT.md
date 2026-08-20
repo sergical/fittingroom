@@ -53,9 +53,10 @@ refusal. Surfaced to the user as a diff with the reason; never silent.
 language prompt. A mutation arrives as an unsaved Fit applied to the
 preview; committing it goes through the same write path as manual edits.
 
-**Provider** — a source of mutations: an API (e.g. OpenRouter) or an
-installed coding-agent CLI piped headlessly (e.g. claude, codex). Providers
-are detected on the developer's machine and sit behind one seam; the
-mutation feature degrades to absent when no provider is found.
+**Provider** — a source of mutations: an API (e.g. Workers AI or
+OpenRouter, both reachable through Cloudflare AI Gateway) or an installed
+coding-agent CLI piped headlessly (e.g. claude, codex). Providers are
+detected on the developer's machine and sit behind one seam; the mutation
+feature degrades to absent when no provider is found.
 
 **Compare** — viewing two Fits side by side in dual previews.

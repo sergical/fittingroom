@@ -1,0 +1,6 @@
+{
+  // Static demo worker: serves the built dist-demo assets, no Worker code.
+  "name": "fittingroom-demo",
+  "compatibility_date": "2026-08-20",
+  "assets": { "directory": "./dist-demo" }
+}

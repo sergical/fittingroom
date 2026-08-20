@@ -89,18 +89,36 @@ function cliProvider(spec: CliSpec, executable: string): Provider {
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 const OPENROUTER_DEFAULT_MODEL = "anthropic/claude-sonnet-4.5";
+const WORKERS_AI_DEFAULT_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
 
-function openRouterProvider(
+/** The gateway URL for `provider` (e.g. "openrouter", "workers-ai") when routed through Cloudflare AI Gateway. */
+function aiGatewayUrl(
+  accountId: string,
+  gatewayId: string,
+  provider: string,
+): string {
+  return `https://gateway.ai.cloudflare.com/v1/${accountId}/${gatewayId}/${provider}/v1/chat/completions`;
+}
+
+/**
+ * Shared shape for OpenAI-compatible chat-completions APIs (OpenRouter,
+ * Workers AI via AI Gateway): a Bearer key, a `model` + single user
+ * message body, and a `choices[0].message.content` response.
+ */
+function openAiChatProvider(
+  id: string,
+  label: string,
+  url: string,
   key: string,
   model: string,
   fetchImpl: typeof fetch,
 ): Provider {
   return {
-    id: "openrouter",
-    label: "OpenRouter",
+    id,
+    label,
     kind: "api",
     async mutate(request: MutationRequest): Promise<Edits> {
-      const response = await fetchImpl(OPENROUTER_URL, {
+      const response = await fetchImpl(url, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${key}`,
@@ -112,14 +130,14 @@ function openRouterProvider(
         }),
       });
       if (!response.ok) {
-        throw new Error(`OpenRouter answered ${response.status}`);
+        throw new Error(`${label} answered ${response.status}`);
       }
       const body = (await response.json()) as {
         choices?: Array<{ message?: { content?: unknown } }>;
       };
       const content = body.choices?.[0]?.message?.content;
       if (typeof content !== "string") {
-        throw new Error("OpenRouter's response carries no message content");
+        throw new Error(`${label}'s response carries no message content`);
       }
       return parseMutationEdits(content);
     },
@@ -128,28 +146,58 @@ function openRouterProvider(
 
 /**
  * Detects the Providers available on this machine, CLI-first: installed
- * coding-agent CLIs (claude, then codex), then the OpenRouter API when
+ * coding-agent CLIs (claude, then codex), then Workers AI via Cloudflare AI
+ * Gateway when `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_AI_GATEWAY_ID`, and
+ * `CLOUDFLARE_API_TOKEN` are all set, then OpenRouter when
  * `OPENROUTER_API_KEY` is set (model overridable via `OPENROUTER_MODEL`).
- * Zero hits means the mutation feature is absent, not broken.
+ * When the same Cloudflare account/gateway pair is set, OpenRouter is also
+ * routed through the gateway rather than hit directly. Zero hits means the
+ * mutation feature is absent, not broken.
  */
 export function detectProviders(
   options: DetectProvidersOptions = {},
 ): Provider[] {
   const env = options.env ?? process.env;
+  const fetchImpl = options.fetchImpl ?? fetch;
   const providers: Provider[] = [];
   for (const spec of CLI_SPECS) {
     const executable = findExecutable(spec.binary, env);
     if (executable) providers.push(cliProvider(spec, executable));
   }
-  const key = env.OPENROUTER_API_KEY;
-  if (key) {
+
+  const accountId = env.CLOUDFLARE_ACCOUNT_ID;
+  const gatewayId = env.CLOUDFLARE_AI_GATEWAY_ID;
+  const gatewayToken = env.CLOUDFLARE_API_TOKEN;
+  if (accountId && gatewayId && gatewayToken) {
     providers.push(
-      openRouterProvider(
-        key,
-        env.OPENROUTER_MODEL ?? OPENROUTER_DEFAULT_MODEL,
-        options.fetchImpl ?? fetch,
+      openAiChatProvider(
+        "workers-ai",
+        "Workers AI",
+        aiGatewayUrl(accountId, gatewayId, "workers-ai"),
+        gatewayToken,
+        env.WORKERS_AI_MODEL ?? WORKERS_AI_DEFAULT_MODEL,
+        fetchImpl,
       ),
     );
   }
+
+  const key = env.OPENROUTER_API_KEY;
+  if (key) {
+    const url =
+      accountId && gatewayId
+        ? aiGatewayUrl(accountId, gatewayId, "openrouter")
+        : OPENROUTER_URL;
+    providers.push(
+      openAiChatProvider(
+        "openrouter",
+        "OpenRouter",
+        url,
+        key,
+        env.OPENROUTER_MODEL ?? OPENROUTER_DEFAULT_MODEL,
+        fetchImpl,
+      ),
+    );
+  }
+
   return providers;
 }

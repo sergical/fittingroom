@@ -4,8 +4,8 @@ import react from "@vitejs/plugin-react";
 
 // Builds the hosted demo: the lab UI on the in-memory fake adapter,
 // plus the sample page its Preview iframe loads. Deployed as a static
-// site (GitHub Pages), so base is page-relative and the output lives
-// beside the plugin-served dist instead of inside it.
+// site (Cloudflare Workers static assets), so base is page-relative and
+// the output lives beside the plugin-served dist instead of inside it.
 export default defineConfig({
   root: fileURLToPath(new URL("./demo", import.meta.url)),
   base: "./",
