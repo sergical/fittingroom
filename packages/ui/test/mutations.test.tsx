@@ -169,6 +169,42 @@ describe("the Mutation flow", () => {
     await screen.findByText(/Claude CLI failed to mutate/);
   });
 
+  it("the chosen Provider survives a reload", async () => {
+    const providers = [
+      fakeProvider("claude", "cli", {}),
+      fakeProvider("codex", "cli", {}),
+    ];
+    const { unmount } = render(<App adapter={createFakeAdapter({ providers })} />);
+
+    const picker = (await screen.findByLabelText(
+      "Mutation provider",
+    )) as HTMLSelectElement;
+    fireEvent.change(picker, { target: { value: "codex" } });
+    await expect.poll(() => picker.value).toBe("codex");
+    unmount();
+
+    // A fresh App instance — the reload — restores the stored choice
+    // instead of the CLI-first default.
+    render(<App adapter={createFakeAdapter({ providers })} />);
+    const reloadedPicker = (await screen.findByLabelText(
+      "Mutation provider",
+    )) as HTMLSelectElement;
+    expect(reloadedPicker.value).toBe("codex");
+  });
+
+  it("a stored Provider absent from the detected list falls back to the default", async () => {
+    localStorage.setItem("fittingroom:provider-id", "gone");
+    const adapter = createFakeAdapter({
+      providers: [fakeProvider("claude", "cli", {}), fakeProvider("codex", "cli", {})],
+    });
+    render(<App adapter={adapter} />);
+
+    const picker = (await screen.findByLabelText(
+      "Mutation provider",
+    )) as HTMLSelectElement;
+    expect(picker.value).toBe("claude");
+  });
+
   it("a list-providers error leaves the feature absent, not broken", async () => {
     const inner = createFakeAdapter();
     const adapter: ProtocolAdapter = {

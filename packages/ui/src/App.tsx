@@ -45,6 +45,8 @@ import {
 const DRAFT_STORAGE_KEY = "fittingroom:draft-edits";
 /** The spacing controls (density, per-token bases) persist the same way. */
 const SPACING_STORAGE_KEY = "fittingroom:spacing-draft";
+/** The chosen Mutation Provider persists the same way, so a reload keeps it. */
+const PROVIDER_STORAGE_KEY = "fittingroom:provider-id";
 
 const COLOR_VALUE =
   /^(#[0-9a-f]{3,8}|(rgb|rgba|hsl|hsla|oklch|oklab|lab|lch|color)\(.*\))$/i;
@@ -124,6 +126,14 @@ function loadDrafts(): Drafts {
   }
 }
 
+function loadProviderId(): string {
+  try {
+    return localStorage.getItem(PROVIDER_STORAGE_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
 function loadSpacing(): SpacingState {
   try {
     const stored = JSON.parse(
@@ -169,7 +179,7 @@ export default function App({
   const [compareSides, setCompareSides] = useState<CompareSide[]>([]);
   const [applying, setApplying] = useState(false);
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
-  const [providerId, setProviderId] = useState("");
+  const [providerId, setProviderId] = useState(loadProviderId);
   const [prompt, setPrompt] = useState("");
   // The active Mutation's edits: a follow-up prompt refines these
   // rather than restarting from the source values.
@@ -303,8 +313,13 @@ export default function App({
     void adapter.handle({ type: "list-providers" }).then((response) => {
       if (response.type === "providers") {
         setProviders(response.providers);
-        // CLI-first default: the server lists Providers in detection order.
-        setProviderId(response.providers[0]?.id ?? "");
+        // Keep the stored choice only if it is one of the detected
+        // Providers; otherwise fall back to the CLI-first default.
+        setProviderId((stored) =>
+          response.providers.some((provider) => provider.id === stored)
+            ? stored
+            : (response.providers[0]?.id ?? ""),
+        );
       }
     });
   }, [adapter]);
@@ -312,8 +327,9 @@ export default function App({
   useEffect(() => {
     localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(drafts));
     localStorage.setItem(SPACING_STORAGE_KEY, JSON.stringify(spacing));
+    localStorage.setItem(PROVIDER_STORAGE_KEY, providerId);
     pushPreview();
-  }, [drafts, spacing, scheme, tokenDocument, fits, compareSides]);
+  }, [drafts, spacing, providerId, scheme, tokenDocument, fits, compareSides]);
 
   /** Edit what you see: a change targets the previewed scheme's half. */
   const setDraft = (token: Token, value: string) => {
