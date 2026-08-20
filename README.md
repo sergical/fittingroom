@@ -17,6 +17,15 @@ independently through one flow.
 Works with any Vite-based framework (Vite, Astro, TanStack Start,
 SvelteKit); Next.js support is planned later.
 
+## Demo
+
+Try the fitting room without installing anything:
+[sergical.github.io/fittingroom](https://sergical.github.io/fittingroom/).
+The demo runs the lab UI on the in-memory fake adapter with a sample
+token set — edits preview live against a sample page, and Commit shows
+the patch a real install would have written to your CSS. Nothing is
+written anywhere.
+
 ## Usage
 
 ### Vite

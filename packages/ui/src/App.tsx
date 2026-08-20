@@ -130,8 +130,12 @@ function loadSpacing(): SpacingState {
  */
 export default function App({
   adapter = httpAdapter,
+  previewSrc = "/",
 }: {
   adapter?: ProtocolAdapter;
+  /** Where the Preview iframe points: the host app's root, or the
+      demo's sample page when there is no host app. */
+  previewSrc?: string;
 }) {
   const [tokenDocument, setTokenDocument] = useState<TokenDocument | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -739,7 +743,12 @@ export default function App({
               {scheme === "dark" ? "Dark" : "Light"}
             </button>
           </div>
-          <iframe ref={iframeRef} title="Preview" src="/" onLoad={pushPreview} />
+          <iframe
+            ref={iframeRef}
+            title="Preview"
+            src={previewSrc}
+            onLoad={pushPreview}
+          />
         </section>
       </div>
     </div>

@@ -1,0 +1,43 @@
+name: Deploy demo
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One Pages deployment at a time; a newer push supersedes an older run.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: pnpm install --frozen-lockfile
+      # The UI build produces both the plugin-served dist and the demo
+      # site (dist-demo); its workspace dependencies build first.
+      - run: pnpm --filter @fittingroom/ui... build
+      # enablement turns the repo's Pages site on from the workflow, so
+      # no manual repository-settings step is needed before first deploy.
+      - uses: actions/configure-pages@v5
+        with:
+          enablement: true
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: packages/ui/dist-demo
+      - id: deployment
+        uses: actions/deploy-pages@v4

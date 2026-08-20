@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>fittingroom demo preview</title>
+    <style>
+      body {
+        margin: 0;
+        min-height: 100vh;
+        box-sizing: border-box;
+        padding: calc(var(--spacing) * 8);
+        background: var(--background);
+        color: var(--foreground);
+        font-family: var(--font-sans);
+      }
+      .card {
+        max-width: 28rem;
+        margin: calc(var(--spacing) * 8) auto 0;
+        padding: calc(var(--spacing) * 6);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow-md);
+        display: flex;
+        flex-direction: column;
+        gap: calc(var(--spacing) * 4);
+      }
+      .card h1 {
+        margin: 0;
+        font-size: 1.25rem;
+      }
+      .card p {
+        margin: 0;
+        color: var(--muted-foreground);
+        line-height: 1.5;
+      }
+      .card button {
+        align-self: flex-start;
+        padding: calc(var(--spacing) * 2) calc(var(--spacing) * 4);
+        border: none;
+        border-radius: var(--radius);
+        background: var(--primary);
+        color: var(--primary-foreground);
+        font-family: inherit;
+        font-size: 0.875rem;
+        cursor: pointer;
+      }
+    </style>
+    <script type="module" src="/preview.ts"></script>
+  </head>
+  <body>
+    <div class="card">
+      <h1>This page stands in for your app</h1>
+      <p>
+        It is styled entirely by the sample tokens on the left. Edit a
+        token and this Preview updates instantly — no files are touched.
+        Commit shows the patch a real install would write to your CSS;
+        in this hosted demo nothing is written anywhere.
+      </p>
+      <button type="button">Primary action</button>
+    </div>
+  </body>
+</html>
