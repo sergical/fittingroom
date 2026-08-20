@@ -17,6 +17,41 @@ independently through one flow.
 Works with any Vite-based framework (Vite, Astro, TanStack Start,
 SvelteKit); Next.js support is planned later.
 
+## Usage
+
+### Vite
+
+Add the plugin to `vite.config.ts`:
+
+```ts
+import { defineConfig } from "vite";
+import fittingroom from "fittingroom";
+
+export default defineConfig({
+  plugins: [fittingroom()],
+});
+```
+
+### Astro
+
+Add the integration to `astro.config.mjs` — no manual Vite configuration
+needed:
+
+```js
+import { defineConfig } from "astro/config";
+import { fittingroomAstro } from "fittingroom/astro";
+
+export default defineConfig({
+  integrations: [fittingroomAstro()],
+});
+```
+
+Both accept the same options: `route` (default `"/__fittingroom"`) and
+`cssFile` (the token CSS file, relative to the project root; detected
+automatically when omitted). The fitting room exists only in dev — run
+your dev server and open `/__fittingroom`. Nothing ships to production
+builds.
+
 ## Packages
 
 | Package          | Description                                             |

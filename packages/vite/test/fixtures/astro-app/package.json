@@ -1,0 +1,5 @@
+{
+  "name": "@fittingroom/astro-fixture-app",
+  "private": true,
+  "type": "module"
+}
