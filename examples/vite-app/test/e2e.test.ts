@@ -3,7 +3,7 @@
 // a color's dark half behind the scheme toggle), observe the live
 // Preview change, commit, assert the file diff. They prove
 // composition, not behaviors — those are tested at the seams.
-import { cpSync, mkdtempSync, readFileSync } from "node:fs";
+import { cpSync, existsSync, mkdtempSync, readFileSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -283,4 +283,57 @@ it("toggles the previewed scheme and edits the dark half independently", async (
     .toBe(originalCss.replace("--primary: #818cf8;", "--primary: #00ff00;"));
   await expect.poll(() => primaryValue.inputValue()).toBe("#00ff00");
   await expect.poll(() => previewRuleVar(1, "--primary")).toBe("");
+});
+
+// The Fits loop from issue #12: save the current edit set as a named
+// Fit, list it, apply it back, commit it through the ordinary write
+// path, and delete it. The Fit lives as a human-readable file in the
+// host repo's .fittingroom/ so looks travel with the branch.
+it("saves, lists, applies, commits, and deletes a Fit", async () => {
+  const cssPath = join(root, "src", "styles.css");
+  const fitPath = join(root, ".fittingroom", "midnight.json");
+  const primaryValue = page.locator('input[aria-label="--primary value"]');
+
+  // A reload resets the previewed scheme to light and clears no drafts.
+  await page.reload();
+  const originalCss = readFileSync(cssPath, "utf8");
+
+  // Save: the current edit set becomes a named Fit on disk.
+  await primaryValue.fill("#0000ff");
+  await page.locator('input[aria-label="Fit name"]').fill("midnight");
+  await page.locator("button.lab-save-fit").click();
+  await expect
+    .poll(() => page.locator(".lab-fit", { hasText: "midnight" }).isVisible())
+    .toBe(true);
+
+  // The Fit file is human-readable, pretty-printed JSON — git-diff-friendly.
+  await expect.poll(() => existsSync(fitPath)).toBe(true);
+  expect(readFileSync(fitPath, "utf8")).toBe(
+    `${JSON.stringify(
+      { name: "midnight", edits: { "--primary": { light: "#0000ff" } } },
+      null,
+      2,
+    )}\n`,
+  );
+
+  // Drift away, then apply: the editor and the Preview return to the Fit.
+  await primaryValue.fill("#ff00ff");
+  await expect.poll(() => previewVar("--primary")).toBe("#ff00ff");
+  await page.locator('button[aria-label="Apply midnight"]').click();
+  await expect.poll(() => primaryValue.inputValue()).toBe("#0000ff");
+  await expect.poll(() => previewVar("--primary")).toBe("#0000ff");
+  expect(readFileSync(cssPath, "utf8")).toBe(originalCss);
+
+  // Commit: the applied Fit goes through the ordinary write path.
+  await page.locator("button.lab-commit").click();
+  await expect
+    .poll(() => readFileSync(cssPath, "utf8"))
+    .toBe(originalCss.replace("--primary: #ff0000;", "--primary: #0000ff;"));
+
+  // Delete: the Fit leaves the disk and the list.
+  await page.locator('button[aria-label="Delete midnight"]').click();
+  await expect.poll(() => existsSync(fitPath)).toBe(false);
+  await expect
+    .poll(() => page.locator(".lab-fit", { hasText: "midnight" }).count())
+    .toBe(0);
 });

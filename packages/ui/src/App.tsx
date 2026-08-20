@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type {
   Edit,
   Edits,
+  Fit,
   ProtocolAdapter,
   Token,
   TokenDocument,
@@ -124,6 +125,8 @@ export default function App({
   const [scheme, setScheme] = useState<Scheme>("light");
   const [spacing, setSpacing] = useState<SpacingState>(loadSpacing);
   const [shadowTab, setShadowTab] = useState<"presets" | "sliders">("presets");
+  const [fits, setFits] = useState<Fit[]>([]);
+  const [fitName, setFitName] = useState("");
   const [importSnippet, setImportSnippet] = useState<string | null>(null);
   const [refusal, setRefusal] = useState<{ reason: string; diff: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -200,6 +203,11 @@ export default function App({
       if (response.type === "document") setTokenDocument(response.document);
       if (response.type === "error") setError(response.message);
       setLoaded(true);
+    });
+    // Fits saved in earlier sessions (or by teammates, via git) list
+    // alongside the tokens from the start.
+    void adapter.handle({ type: "list-fits" }).then((response) => {
+      if (response.type === "fits") setFits(response.fits);
     });
   }, [adapter]);
 
@@ -291,6 +299,54 @@ export default function App({
       if (read.type === "document") setTokenDocument(read.document);
     } else if (response.type === "refused") {
       setRefusal({ reason: response.reason, diff: response.diff });
+    } else if (response.type === "error") {
+      setError(response.message);
+    }
+  };
+
+  /** Names the current edit set: it becomes a Fit the adapter stores. */
+  const saveFit = async () => {
+    const response = await adapter.handle({
+      type: "save-fit",
+      name: fitName.trim(),
+      edits: toEdits(mergedDrafts()),
+    });
+    if (response.type === "fit-saved") {
+      setFits((previous) =>
+        [
+          ...previous.filter((fit) => fit.name !== response.fit.name),
+          response.fit,
+        ].sort((a, b) => a.name.localeCompare(b.name)),
+      );
+      setFitName("");
+      setError(null);
+    } else if (response.type === "error") {
+      setError(response.message);
+    }
+  };
+
+  /**
+   * A Fit's edits become the draft set, replacing whatever was drafted:
+   * the preview effect pushes them, and committing them goes through
+   * the ordinary write path. Spacing state resets because the Fit's
+   * stored edits already carry any computed spacing values.
+   */
+  const applyFit = async (name: string) => {
+    const response = await adapter.handle({ type: "apply-fit", name });
+    if (response.type === "fit-applied") {
+      setDrafts(response.fit.edits);
+      setSpacing(NO_SPACING);
+      setError(null);
+    } else if (response.type === "error") {
+      setError(response.message);
+    }
+  };
+
+  const deleteFit = async (name: string) => {
+    const response = await adapter.handle({ type: "delete-fit", name });
+    if (response.type === "fit-deleted") {
+      setFits((previous) => previous.filter((fit) => fit.name !== response.name));
+      setError(null);
     } else if (response.type === "error") {
       setError(response.message);
     }
@@ -551,6 +607,54 @@ export default function App({
                 );
               })}
             </>
+          )}
+          {tokenDocument && (
+            <section className="lab-fits" aria-label="Fits">
+              <h2 className="lab-section-title">Fits</h2>
+              <div className="lab-fit-save">
+                <input
+                  type="text"
+                  aria-label="Fit name"
+                  placeholder="Name this look"
+                  value={fitName}
+                  onChange={(event) => setFitName(event.target.value)}
+                />
+                <button
+                  type="button"
+                  className="lab-save-fit"
+                  disabled={draftCount === 0 || fitName.trim() === ""}
+                  onClick={() => void saveFit()}
+                >
+                  Save Fit
+                </button>
+              </div>
+              {fits.length === 0 ? (
+                <p className="lab-empty">No saved Fits yet.</p>
+              ) : (
+                <ul className="lab-fit-list">
+                  {fits.map((fit) => (
+                    <li className="lab-fit" key={fit.name}>
+                      <span className="lab-token-name">{fit.name}</span>
+                      <button
+                        type="button"
+                        aria-label={`Apply ${fit.name}`}
+                        onClick={() => void applyFit(fit.name)}
+                      >
+                        Apply
+                      </button>
+                      <button
+                        type="button"
+                        className="lab-reset"
+                        aria-label={`Delete ${fit.name}`}
+                        onClick={() => void deleteFit(fit.name)}
+                      >
+                        Delete
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
           )}
         </section>
 

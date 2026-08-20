@@ -282,3 +282,45 @@ body {
   border-radius: 0.5rem;
   background: #fff;
 }
+
+.lab-fit-save {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.375rem 0;
+}
+
+.lab-fit-save input {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.8125rem;
+  padding: 0.25rem 0.375rem;
+}
+
+.lab-save-fit,
+.lab-fit button {
+  padding: 0.25rem 0.625rem;
+  border: 1px solid #d6d3d1;
+  border-radius: 0.375rem;
+  background: #fff;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.lab-save-fit:disabled {
+  color: #a8a29e;
+  cursor: default;
+}
+
+.lab-fit-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lab-fit {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.375rem 0;
+}
