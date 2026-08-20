@@ -114,13 +114,17 @@ export default function App() {
   const tokenByName = (name: string): Token | undefined =>
     documentRef.current?.tokens.find((token) => token.name === name);
 
+  /** The light half of a draft, whether it is a bare value or a paired edit. */
+  const lightValue = (draft: SpacingEdit): string =>
+    typeof draft === "string" ? draft : draft.light;
+
   /**
    * A draft edits the light half of a token, so a paired emdash token
    * must preview as `light-dark(draft, dark)` — a bare value would also
    * override the dark half, showing a state a commit never produces.
    */
   const previewValue = (token: Token | undefined, draft: SpacingEdit): string => {
-    const light = typeof draft === "string" ? draft : draft.light;
+    const light = lightValue(draft);
     if (
       documentRef.current?.dialect === "emdash" &&
       token?.value.raw === undefined &&
@@ -153,9 +157,7 @@ export default function App() {
         const token = tokenByName(name);
         return token !== undefined && isFontToken(token);
       })
-      .map(([, draft]) =>
-        primaryFamily(typeof draft === "string" ? draft : draft.light),
-      )
+      .map(([, draft]) => primaryFamily(lightValue(draft)))
       .filter((family) => googleFontByFamily(family) !== undefined);
     return [...new Set(families)];
   };
