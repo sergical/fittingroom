@@ -11,7 +11,30 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # The secrets context is not readable from a job-level `if`, so a tiny
+  # first job turns "is the token set" into an output the deploy job can gate
+  # on. Without this the whole workflow goes red on every push until the
+  # repository owner adds the Cloudflare secrets.
+  check-credentials:
+    runs-on: ubuntu-latest
+    outputs:
+      configured: ${{ steps.check.outputs.configured }}
+    steps:
+      - id: check
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -n "$CLOUDFLARE_API_TOKEN" ] && [ -n "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo 'configured=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'configured=false' >> "$GITHUB_OUTPUT"
+            echo '::notice::CLOUDFLARE_API_TOKEN or CLOUDFLARE_ACCOUNT_ID is not set; skipping the demo deploy.'
+          fi
+
   deploy:
+    needs: check-credentials
+    if: needs.check-credentials.outputs.configured == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

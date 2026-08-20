@@ -20,7 +20,7 @@ SvelteKit); Next.js support is planned later.
 ## Demo
 
 Try the fitting room without installing anything:
-[sergical.github.io/fittingroom](https://sergical.github.io/fittingroom/).
+[fittingroom-demo.s-a62.workers.dev](https://fittingroom-demo.s-a62.workers.dev).
 The demo runs the lab UI on the in-memory fake adapter with a sample
 token set — edits preview live against a sample page, and Commit shows
 the patch a real install would have written to your CSS. Nothing is
@@ -61,15 +61,45 @@ automatically when omitted). The fitting room exists only in dev — run
 your dev server and open `/__fittingroom`. Nothing ships to production
 builds.
 
+## AI mutations
+
+The lab can turn a written instruction into a Fit. It picks a provider with
+this ladder, and the lab's dropdown lets you override the choice (the
+selection persists in `localStorage`):
+
+1. `claude` CLI, if it is on `PATH`
+2. `codex` CLI, if it is on `PATH`
+3. Workers AI
+4. OpenRouter
+
+The two CLI providers need no configuration. The two API providers read
+these environment variables from the shell that runs your dev server:
+
+| Variable | Used for |
+| -------- | -------- |
+| `CLOUDFLARE_ACCOUNT_ID` | Workers AI, and the AI Gateway route |
+| `CLOUDFLARE_AI_GATEWAY_ID` | Workers AI, and the AI Gateway route |
+| `CLOUDFLARE_API_TOKEN` | Workers AI |
+| `OPENROUTER_API_KEY` | OpenRouter |
+| `WORKERS_AI_MODEL` | Workers AI model override (default `@cf/meta/llama-3.3-70b-instruct-fp8-fast`) |
+| `OPENROUTER_MODEL` | OpenRouter model override (default `anthropic/claude-sonnet-4.5`) |
+
+Workers AI appears only when all three `CLOUDFLARE_*` variables are set; it
+always goes through AI Gateway. OpenRouter appears whenever its key is set,
+and it also goes through the gateway when the account and gateway IDs are
+present. No hits means the mutation feature is absent, not broken.
+
 ## Packages
 
 | Package          | Description                                             |
 | ---------------- | -------------------------------------------------------- |
 | `@fittingroom/core` | Parses CSS design tokens and writes edits back            |
 | `@fittingroom/ui`   | The laboratory UI served at `/__fittingroom` (private)             |
-| `@fittingroom/vite` | Vite plugin that serves the laboratory UI in dev           |
+| `fittingroom`       | Vite plugin and Astro integration that serve the laboratory UI in dev |
 
 ## Status
 
-Early scaffold. Parsers cover the common cases; the laboratory UI and the
-plugin's live-editing wiring are still placeholders.
+v1 is complete: the parsers, the laboratory UI, Fits, Compare, the AI
+mutation flow, and the Vite plugin and Astro integration all ship. See the
+[GitHub releases](https://github.com/sergical/fittingroom/releases) for what
+changed in each version.
