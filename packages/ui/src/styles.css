@@ -144,7 +144,9 @@ body {
   padding: 0.25rem 0.375rem;
 }
 
-.lab-reset {
+.lab-reset,
+.lab-save-fit,
+.lab-fit button {
   padding: 0.25rem 0.625rem;
   border: 1px solid #d6d3d1;
   border-radius: 0.375rem;
@@ -153,7 +155,8 @@ body {
   cursor: pointer;
 }
 
-.lab-reset:disabled {
+.lab-reset:disabled,
+.lab-save-fit:disabled {
   color: #a8a29e;
   cursor: default;
 }
@@ -295,21 +298,6 @@ body {
   min-width: 0;
   font-size: 0.8125rem;
   padding: 0.25rem 0.375rem;
-}
-
-.lab-save-fit,
-.lab-fit button {
-  padding: 0.25rem 0.625rem;
-  border: 1px solid #d6d3d1;
-  border-radius: 0.375rem;
-  background: #fff;
-  font-size: 0.8125rem;
-  cursor: pointer;
-}
-
-.lab-save-fit:disabled {
-  color: #a8a29e;
-  cursor: default;
 }
 
 .lab-fit-list {
