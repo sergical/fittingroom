@@ -115,7 +115,7 @@ describe("spacingEdits", () => {
     });
   });
 
-  it("keeps the scaled dark half alongside a light-half override", () => {
+  it("keeps the scaled dark half alongside a legacy light-half override", () => {
     const paired: Token = {
       name: "--spacing-md",
       value: { light: "1rem", dark: "0.75rem" },
@@ -123,5 +123,27 @@ describe("spacingEdits", () => {
     expect(spacingEdits([paired], 2, { "--spacing-md": "0.5rem" })).toEqual({
       "--spacing-md": { light: "1rem", dark: "1.5rem" },
     });
+  });
+
+  it("targets only the dark half for a dark-scheme base override", () => {
+    const paired: Token = {
+      name: "--spacing-md",
+      value: { light: "1rem", dark: "0.75rem" },
+    };
+    expect(spacingEdits([paired], 1, { "--spacing-md": { dark: "1.5rem" } })).toEqual({
+      "--spacing-md": { light: "1rem", dark: "1.5rem" },
+    });
+  });
+
+  it("composes independently overridden halves with the density", () => {
+    const paired: Token = {
+      name: "--spacing-md",
+      value: { light: "1rem", dark: "0.75rem" },
+    };
+    expect(
+      spacingEdits([paired], 2, {
+        "--spacing-md": { light: "2rem", dark: "1rem" },
+      }),
+    ).toEqual({ "--spacing-md": { light: "4rem", dark: "2rem" } });
   });
 });

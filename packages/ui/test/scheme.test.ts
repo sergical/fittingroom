@@ -134,4 +134,22 @@ describe("previewBuckets", () => {
     expect(buckets.light).toEqual({ "--primary": "#ff0000" });
     expect(buckets.dark).toEqual({});
   });
+
+  it("keeps a dark-half draft out of the light rule while the document loads", () => {
+    const buckets = previewBuckets(null, { "--primary": { dark: "#00ff00" } });
+    expect(buckets.light).toEqual({});
+    expect(buckets.dark).toEqual({ "--primary": "#00ff00" });
+  });
+
+  it("routes an unknown token's halves only to their own rules", () => {
+    const buckets = previewBuckets(shadcnDocument([raw]), {
+      "--stale": { light: "#ff0000", dark: "#00ff00" },
+      "--stale-string": "#0000ff",
+    });
+    expect(buckets.light).toEqual({
+      "--stale": "#ff0000",
+      "--stale-string": "#0000ff",
+    });
+    expect(buckets.dark).toEqual({ "--stale": "#00ff00" });
+  });
 });

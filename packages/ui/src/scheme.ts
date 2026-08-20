@@ -105,12 +105,22 @@ export function previewBuckets(
         if (light !== undefined) buckets.light[name] = light;
         if (dark !== undefined) buckets.dark[name] = dark;
       }
-    } else {
+    } else if (token) {
       const value = light ?? dark;
       if (value !== undefined) {
         buckets.light[name] = value;
         buckets.dark[name] = value;
       }
+    } else {
+      // The token is unknown: the document read is still in flight (or
+      // the draft is stale). Route each half only to its own rule — a
+      // persisted dark draft must never flash in the light preview, or
+      // vice versa, while the document loads. A bare string might be a
+      // raw value or a legacy light-half edit; the light rule is the
+      // safe home for it, and the re-push on document arrival corrects
+      // any transient under-preview.
+      if (light !== undefined) buckets.light[name] = light;
+      if (dark !== undefined) buckets.dark[name] = dark;
     }
   }
   return buckets;

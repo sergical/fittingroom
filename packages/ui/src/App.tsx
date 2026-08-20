@@ -62,11 +62,13 @@ type Drafts = Record<string, Edit>;
 /**
  * The spacing editor's state: the headline density multiplier over all
  * spacing tokens, plus per-token base overrides that compose with it
- * (effective value = base × density).
+ * (effective value = base × density). Base overrides are Edit values —
+ * a paired token's override targets the previewed scheme's half, and a
+ * persisted bare string is a legacy light-half override.
  */
 interface SpacingState {
   density: number;
-  bases: Record<string, string>;
+  bases: Record<string, Edit>;
 }
 
 const NO_SPACING: SpacingState = { density: 1, bases: {} };
@@ -196,14 +198,12 @@ export default function App() {
     setDrafts((previous) => withDraft(previous, token, schemeRef.current, value));
   };
 
+  /** Edit what you see: a base override targets the previewed scheme's half. */
   const setSpacingBase = (token: Token, value: string) => {
-    setSpacing((previous) => {
-      if (value === baseValue(token)) {
-        const { [token.name]: _dropped, ...bases } = previous.bases;
-        return { ...previous, bases };
-      }
-      return { ...previous, bases: { ...previous.bases, [token.name]: value } };
-    });
+    setSpacing((previous) => ({
+      ...previous,
+      bases: withDraft(previous.bases, token, schemeRef.current, value),
+    }));
   };
 
   /**
@@ -245,13 +245,21 @@ export default function App() {
       // over instead of vanishing.
       setSpacing((current) => {
         if (current === submittedSpacing) return NO_SPACING;
+        const rebase = (base: Edit): Edit =>
+          typeof base === "string"
+            ? scaleLength(base, submittedSpacing.density)
+            : {
+                ...(base.light !== undefined && {
+                  light: scaleLength(base.light, submittedSpacing.density),
+                }),
+                ...(base.dark !== undefined && {
+                  dark: scaleLength(base.dark, submittedSpacing.density),
+                }),
+              };
         return {
           density: current.density / submittedSpacing.density,
           bases: Object.fromEntries(
-            Object.entries(current.bases).map(([name, base]) => [
-              name,
-              scaleLength(base, submittedSpacing.density),
-            ]),
+            Object.entries(current.bases).map(([name, base]) => [name, rebase(base)]),
           ),
         };
       });
@@ -450,7 +458,9 @@ export default function App() {
                 </button>
               </div>
               {spacingTokens.map((token) => {
-                const base = spacing.bases[token.name] ?? baseValue(token);
+                const base =
+                  draftedValue(spacing.bases[token.name], token, scheme) ??
+                  schemeValue(token, scheme);
                 const computed = scaleLength(base, spacing.density);
                 return (
                   <div className="lab-token" key={token.name}>

@@ -1,4 +1,5 @@
-import type { Token } from "@fittingroom/core";
+import type { Edit, Token } from "@fittingroom/core";
+import { draftedValue } from "./scheme.js";
 
 /**
  * One value the density multiplier can scale: a signed number with an
@@ -45,30 +46,40 @@ export function scaleLength(value: string, factor: number): string {
 
 /**
  * A computed spacing edit: a bare string for a single-valued token, or
- * both halves of a light/dark pair — the density scales the dark half
- * too, while a per-token base override replaces only the light half
- * (mirroring the color editor's light-half semantics).
+ * both halves of a light/dark pair.
  */
 export type SpacingEdit = string | { light: string; dark: string };
 
 /**
  * The computed spacing edits: every spacing token's base (its per-token
- * override, or its original value) scaled by the density. Tokens whose
- * computed value equals the original need no edit and are omitted.
+ * override, or its original value) scaled by the density. Base
+ * overrides are Edit values folded by withDraft, so each targets the
+ * scheme it was typed under; a bare string is a legacy light-half
+ * override. The density is the deliberate exception to edit-what-you-
+ * see: it is a global multiplier, so it scales both halves of a pair
+ * regardless of the previewed scheme. Tokens whose computed value
+ * equals the original need no edit and are omitted.
  */
 export function spacingEdits(
   tokens: Token[],
   density: number,
-  bases: Record<string, string>,
+  bases: Record<string, Edit>,
 ): Record<string, SpacingEdit> {
   const edits: Record<string, SpacingEdit> = {};
   for (const token of tokens) {
     if (!isSpacingToken(token)) continue;
+    const base = bases[token.name];
     const original = baseValue(token);
-    const light = scaleLength(bases[token.name] ?? original, density);
+    const light = scaleLength(
+      draftedValue(base, token, "light") ?? original,
+      density,
+    );
     const originalDark = token.value.raw === undefined ? token.value.dark : undefined;
     if (originalDark !== undefined) {
-      const dark = scaleLength(originalDark, density);
+      const dark = scaleLength(
+        draftedValue(base, token, "dark") ?? originalDark,
+        density,
+      );
       if (light !== original || dark !== originalDark) {
         edits[token.name] = { light, dark };
       }
